@@ -1,0 +1,25 @@
+# Docs Index
+
+- `00-overview.md`: Product goals, inputs, outputs, and MVP scope.
+- `01-architecture.md`: System architecture, components, and data flow.
+- `02-database-schema.md`: MVP data model and indexing strategy.
+- `03-integration-flows.md`: Gmail/Calendar sync and token refresh flows.
+- `04-prioritization-rules.md`: Task scoring and ranking rules.
+- `05-briefing-template.md`: Daily briefing generation template.
+- `06-milestones.md`: Build milestones and progress checklist.
+- `07-decision-log.md`: Architecture/product decisions with rationale.
+- `08-week-1-execution-plan.md`: Day-by-day Week 1 implementation plan.
+- `09-api-contracts.md`: MVP API request/response contracts.
+- `10-openapi-starter.yaml`: OpenAPI starter spec for backend/frontend typing.
+- `11-fastapi-bootstrap-plan.md`: FastAPI stack and bootstrap plan.
+- `12-google-oauth-setup.md`: Google Cloud OAuth setup steps.
+- `13-fastapi-code-scaffold.md`: Starter code snippets for backend scaffolding.
+- `14-alembic-migrations-guide.md`: Migration setup and first schema workflow.
+- `15-local-dev-setup.md`: Local environment setup and smoke tests.
+- `16-day-1-task-board.md`: Day 1 execution task board.
+- `17-day-2-task-board.md`: Day 2 execution task board.
+- `18-day-3-task-board.md`: Day 3 execution task board.
+- `19-day-4-task-board.md`: Day 4 execution task board.
+- `20-day-5-task-board.md`: Day 5 execution task board.
+- `21-day-6-task-board.md`: Day 6 execution task board.
+- `22-day-7-task-board.md`: Day 7 execution task board.

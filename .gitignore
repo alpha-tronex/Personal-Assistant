@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime data (SQLite DB, OAuth tokens, downloaded credentials, launchd logs)
+backend/data/*
+!backend/data/.gitkeep
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

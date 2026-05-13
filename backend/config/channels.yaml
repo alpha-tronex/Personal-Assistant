@@ -1,0 +1,7 @@
+# YouTube channels the morning brief should check for new uploads.
+# Used by the YouTube agent (wired in step 6).
+# Use the channel handle (with the leading @) or the raw channel ID (UCxxxx...).
+channels:
+  # - "@fireship"
+  # - "@lexfridman"
+  # - "@veritasium"

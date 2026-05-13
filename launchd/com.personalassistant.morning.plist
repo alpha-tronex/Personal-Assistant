@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd job: triggers the morning brief at 08:00 local time.
+
+  Install:
+    1. Edit the path placeholders below to match your machine.
+    2. cp launchd/com.personalassistant.morning.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.personalassistant.morning.plist
+
+  This calls the running FastAPI process at /run-now. If FastAPI isn't up,
+  it falls back to running the Python entrypoint directly (see ProgramArguments).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.personalassistant.morning</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <!-- Try the local FastAPI server first; if it's not up, run the workflow directly. -->
+        <string>curl -fsS -X POST http://127.0.0.1:8000/run-now &gt; /dev/null 2&gt;&amp;1 || (cd "/Users/alphathiam/Documents/GitHub/Personal Assistant/backend" &amp;&amp; .venv/bin/python -c 'from app.workflow import run_morning_brief; run_morning_brief("schedule")')</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/alphathiam/Documents/GitHub/Personal Assistant/backend/data/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alphathiam/Documents/GitHub/Personal Assistant/backend/data/launchd.err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
