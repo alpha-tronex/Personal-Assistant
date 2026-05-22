@@ -60,7 +60,8 @@ setup walkthrough lives in `backend/README.md`.
 |------|----------------|
 | `app/main.py` | FastAPI app: lifespan (DB + scheduler), HTTP endpoints. |
 | `app/scheduler.py` | APScheduler in-process daily cron. |
-| `app/workflow.py` | Orchestrator entry point: `run_morning_brief(trigger)`. |
+| `app/workflow.py` | Thin wrapper: opens a `Run` row, invokes the graph, persists the `Brief`. |
+| `app/graph.py` | LangGraph `StateGraph`: source nodes → compose → deliver. Exports compiled `graph`. |
 | `app/config.py` | `Settings` from `.env` via pydantic-settings. |
 | `app/db.py` | SQLAlchemy engine + `session_scope()` context manager. |
 | `app/models.py` | `Run`, `Brief`, `SeenItem` ORM tables. |
@@ -77,6 +78,7 @@ setup walkthrough lives in `backend/README.md`.
 | `scripts/test_telegram.py` | Verify bot token, discover chat_id, send test msg. |
 | `config/channels.yaml` | List of YouTube channels to watch. |
 | `launchd/com.personalassistant.morning.plist` | macOS daily 08:00 trigger. |
+| `langgraph.json` (repo root) | Points LangGraph CLI / Studio at `app/graph.py:graph`. |
 
 ## 3. Data model (SQLite)
 
@@ -131,10 +133,10 @@ deterministically.
 
 For steps 1–4 the orchestrator is plain Python: fetch → compose → deliver.
 Once Gmail and YouTube agents land (steps 5–6) we promote it to a
-**LangGraph `StateGraph`** with:
+**LangGraph `StateGraph`** in `app/graph.py` with:
 
 ```python
-class BriefState(TypedDict):
+class BriefState(TypedDict, total=False):
     calendar_md: str
     gmail_md: str
     youtube_md: str
@@ -152,6 +154,34 @@ Why LangGraph at all if today's flow is linear? Because:
 - Parallelism comes for free (3 Google APIs hit concurrently → ~3× faster).
 - Each node is independently retryable / observable.
 - Human-in-the-loop interrupts (e.g. "approve before sending") drop in.
+- **LangGraph Studio** gives us a free visual debugger — see §6a.
+
+`workflow.run_morning_brief()` stays as the persistence boundary: it opens
+a `Run` row, calls `graph.invoke({})`, then records the `Brief` and final
+status. The graph itself is pure (no DB writes) so it can be safely
+re-executed from Studio against your real Google/Telegram credentials
+without polluting the run history.
+
+### 6a. LangGraph Studio (visual debugger)
+
+A `langgraph.json` at the repo root exposes the compiled graph to the
+`langgraph` CLI:
+
+```json
+{
+  "dependencies": ["./backend"],
+  "graphs": { "morning_brief": "./backend/app/graph.py:graph" },
+  "env": "./backend/.env",
+  "python_version": "3.11"
+}
+```
+
+`langgraph-cli[inmem]` is added to the `dev` extras. Running `langgraph dev`
+from the repo root boots a local server on `:2024` and prints a Studio URL
+that opens the graph in the browser — nodes are clickable, state is
+inspectable at every step, and you can submit synthetic inputs without
+going through `/run-now`. Studio is dev-only; production traffic still
+flows through FastAPI → `workflow.run_morning_brief()` → `graph.invoke()`.
 
 ## 7. LLM usage (steps 5+)
 
@@ -205,9 +235,9 @@ FYI: ...
 | 2 | ✅ done | Google OAuth bootstrap + login script. |
 | 3 | ✅ done | Calendar agent (today's events as markdown). |
 | 4 | ✅ done | Telegram delivery + chat-id discovery + `/run-now` end-to-end. |
-| 5 | ⏳ next | Gmail agent + summarizer. |
-| 6 | ⏳ | YouTube agent (channel uploads + caption-only transcripts). |
-| 7 | ⏳ | Replace `app/workflow.py` body with a LangGraph parallel graph. |
+| 5 | ✅ done | Gmail agent + summarizer. |
+| 6 | ⏳ next | YouTube agent (channel uploads + caption-only transcripts). |
+| 7 | ⏳ | Introduce `app/graph.py` (LangGraph parallel graph) + `langgraph.json` for Studio. |
 | 8 | ⏳ | launchd install instructions + `pmset` wake. |
 | 9 | ⏳ | `/history` HTML polish, run-history index page. |
 | 10 | ⏳ | README troubleshooting + Docker option. |
@@ -215,7 +245,8 @@ FYI: ...
 ## 11. Non-goals (for now)
 
 - Multi-user. This is a single-user personal agent.
-- Visual workflow builder. (That was an earlier shape; we're shipping the
-  focused use case instead.)
+- A custom visual workflow *builder*. (That was an earlier shape — we're
+  shipping the focused use case instead. LangGraph Studio gives us a
+  read-mostly visual debugger for free; see §6a.)
 - Pushing data anywhere except Telegram and the local SQLite DB.
 - Hosted deployment. Local Mac only — `host = local` per the build spec.

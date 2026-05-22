@@ -19,13 +19,13 @@ Steps 1–4 from the original build plan are **already done** (see
 
 ## Snapshot
 
-| Phase | Weeks | Outcome |
-|------|-------|---------|
-| 0. Personal setup (you only) | 1 | OAuth + Telegram working, calendar brief arrives daily |
-| 1. Gmail agent | 2–4 | Email summary added to the daily brief |
-| 2. YouTube agent | 5–7 | Video TL;DRs added to the daily brief |
-| 3. Orchestration + scheduling | 8–9 | LangGraph parallel runs + 08:00 launchd job |
-| 4. Polish (optional) | 10–12 | History UI, observability, docs, Dockerize |
+| Phase | Weeks | Status | Outcome |
+|------|-------|--------|---------|
+| 0. Personal setup (you only) | 1 | ✅ done | OAuth + Telegram working, calendar brief arrives daily |
+| 1. Gmail agent | 2–4 | ✅ done (Week 4 = ongoing tuning) | Email summary added to the daily brief |
+| 2. YouTube agent | 5–7 | ⏳ next | Video TL;DRs added to the daily brief |
+| 3. Orchestration + scheduling | 8–9 | ✅ done | LangGraph parallel runs (+ Studio visual debugger) + 08:00 launchd job |
+| 4. Polish (optional) | 10–12 | ⏳ | History UI, observability, docs, Dockerize |
 
 **Total realistic timeline: ~10 weeks to a fully-working daily brief, ~12 weeks with polish.**
 **Total effort: ~35–50 hours.**
@@ -40,22 +40,24 @@ hit the **must-do** ones — every week is structured that way.
 You don't need to write any code in this phase; everything you need was
 delivered in steps 1–4. This is **your one-time onboarding** to the agent.
 
-### Week 1 — Onboarding (~3 hrs)
+### Week 1 — Onboarding (~3 hrs)  ✅ done
 
 **Must-do** (~2 hrs)
-- [ ] Create a Python 3.11 venv in `backend/` and `pip install -e .`
-- [ ] Copy `.env.example` → `.env` and fill in `OPENAI_API_KEY`
-- [ ] Create a Telegram bot via `@BotFather`, run `scripts/test_telegram.py`,
+- [x] Create a Python 3.11 venv in `backend/` and `pip install -e .`
+- [x] Copy `.env.example` → `.env` and fill in `OPENAI_API_KEY`
+- [x] Create a Telegram bot via `@BotFather`, run `scripts/test_telegram.py`,
       paste the discovered `TELEGRAM_CHAT_ID` back into `.env`
-- [ ] Create the Google Cloud project, enable **Calendar API only** (for now),
-      download `credentials.json`, run `scripts/google_login.py`
-- [ ] `uvicorn app.main:app --reload` + `curl -X POST /run-now` → confirm a
+- [x] Create the Google Cloud project, enable **Calendar API** (Gmail +
+      YouTube enabled at the same time for convenience), download
+      `credentials.json`, run `scripts/google_login.py`
+- [x] `uvicorn app.main:app --reload` + `curl -X POST /run-now` → confirm a
       Telegram message arrives with today's calendar
 
-**Stretch** (~1 hr)
-- [ ] Install the launchd plist (see `launchd/com.personalassistant.morning.plist`)
-      so the brief runs at 08:00 every day — calendar-only is already useful
-- [ ] If your Mac sleeps overnight: `sudo pmset repeat wakeorpoweron MTWRFSU 07:55:00`
+**Stretch** (~1 hr) — *handled in Week 9 instead*
+- [x] Install the launchd plist *(done — installed via `launchctl bootstrap
+      gui/$(id -u)`)*
+- [ ] ~~If your Mac sleeps overnight: `sudo pmset repeat wakeorpoweron MTWRFSU 07:55:00`~~
+      *(opted out — happy to receive the brief whenever the Mac next wakes)*
 
 **Definition of done**
 You wake up the next morning and the Telegram message arrives at 08:00 with
@@ -69,66 +71,55 @@ your real calendar. No code written yet.
 
 ## Phase 1 — Gmail agent (Weeks 2–4)
 
-### Week 2 — Gmail data layer (~4 hrs)
+### Week 2 — Gmail data layer (~4 hrs)  ✅ done
 
 **Must-do**
-- [ ] Enable **Gmail API** in Google Cloud Console
-- [ ] Delete `data/token.json` and re-run `scripts/google_login.py` so the
+- [x] Enable **Gmail API** in Google Cloud Console
+- [x] Delete `data/token.json` and re-run `scripts/google_login.py` so the
       Gmail scope is added to the cached token
-- [ ] Implement `app/tools/gmail.py`:
-  - List messages with `q="newer_than:2d in:inbox"`
-  - For each message, fetch `From`, `Subject`, `Date`, snippet, and plain-text
-    body (decode `text/plain` part; strip if HTML-only)
-  - Return a typed `GmailMessage` dataclass list
-- [ ] Add a `scripts/test_gmail.py` that just prints the last 10 messages so
-      you can verify auth + parsing without touching the LLM
+- [x] Implement `app/tools/gmail.py`
+- [x] Add a `scripts/test_gmail.py` smoke-test script
 
 **Stretch**
-- [ ] Quoted-reply stripper (regex on `On ... wrote:` and `>` lines)
-- [ ] Skip messages from yourself (don't summarize your own sent mail that
-      ends up in the inbox via lists)
+- [x] Quoted-reply stripper (regex on `On ... wrote:` and `>` lines)
+- [x] Skip messages from yourself
 
 **DOD**: `python scripts/test_gmail.py` prints clean sender/subject/body for
-recent mail.
+recent mail. ✅
 
-### Week 3 — Gmail summarizer + integration (~4 hrs)
+### Week 3 — Gmail summarizer + integration (~4 hrs)  ✅ done
 
 **Must-do**
-- [ ] Implement `app/agents/gmail_agent.py`:
-  - Call the tool, drop empty/auto-generated mail (e.g. calendar invites
-    you already see in the calendar section)
-  - Send everything in **one** OpenAI call with a structured prompt:
-    *"Bucket each message into Action / FYI / Skim. Output markdown."*
-  - Use `gpt-4o-mini` (cheap, plenty smart for this)
-- [ ] Replace the `gmail_section = "_(not wired)_"` placeholder in
-      `app/workflow.py` with a call to `summarize_gmail()`
-- [ ] Trigger `/run-now` and confirm Telegram now shows real email summaries
+- [x] Implement `app/agents/gmail_agent.py` (Action / FYI / Skim buckets,
+      `gpt-4o-mini`, structured prompt)
+- [x] Wire `summarize_gmail()` into `app/graph.py` (the placeholder lived
+      there, not `workflow.py`, after the LangGraph rewrite)
+- [x] Trigger `/run-now` and confirm Telegram shows real email summaries
 
 **Stretch**
-- [ ] Cost guardrail: cap the prompt at ~30 messages; if more, summarize in
-      batches of 20
+- [x] Cost guardrail: 20-per-batch × 2 batches = 40 messages max per run
 
-**DOD**: Telegram message tomorrow morning includes Gmail summary.
+**DOD**: Telegram message includes Gmail summary. ✅
 
-### Week 4 — Iterate on Gmail (~3 hrs, buffer-friendly)
+### Week 4 — Iterate on Gmail (~3 hrs, buffer-friendly)  🟡 ongoing
 
 You'll be unhappy with the first few briefs. That's expected and totally
 fine. Spend the week tuning.
 
 **Must-do**
 - [ ] Tighten the prompt based on the actual output you've seen for a few days
-- [ ] Filter out promotions/notifications more aggressively (or don't — your
-      call). Easy lever: add Gmail labels to exclude in the search query
-- [ ] Add basic error handling: if Gmail returns 0 messages, return *"📧 No
-      new email"* instead of an empty section
+      *(needs 2–3 real briefs to evaluate)*
+- [x] Filter out promotions/notifications more aggressively — `GMAIL_QUERY`
+      now excludes `category:promotions` by default
+- [x] Empty-inbox path returns "No new inbox messages. ✨" instead of an
+      empty section
 
 **Stretch**
-- [ ] Add a configurable `IGNORE_FROM` list in `.env` for senders you never
-      want summarized (recruiters, your weekly newsletter, etc.)
+- [x] `GMAIL_IGNORE_FROM` env list for senders you never want summarized
 
 **DOD**: Look at three consecutive morning briefs. If you'd send them to a
-friend as "what's happening", phase 1 is done. If not, spend more time here
-before moving on.
+friend as "what's happening", phase 1 is done. *(in progress — first brief
+landed today)*
 
 ---
 
@@ -194,62 +185,83 @@ useful (not too long, not too sparse).
 
 ## Phase 3 — Orchestration + reliable scheduling (Weeks 8–9)
 
-### Week 8 — LangGraph rewrite (~4 hrs)
+### Week 8 — LangGraph rewrite + Studio (~4 hrs)  ✅ done
 
 The three agents work sequentially today. Promoting to LangGraph makes them
-run in parallel (≈3× faster) and gives you proper observability + graceful
-partial-failure handling.
+run in parallel (≈3× faster), gives you proper observability + graceful
+partial-failure handling, **and** unlocks LangGraph Studio as a free visual
+debugger.
 
 **Must-do**
-- [ ] Create `app/graph.py` with a `BriefState` TypedDict and a `StateGraph`
-      that fans `START → [calendar | gmail | youtube] → compose → deliver → END`
-- [ ] Compile the graph at module load
-- [ ] Update `workflow.run_morning_brief()` to invoke the graph instead of
-      calling functions in sequence
-- [ ] Each agent node should catch its own exceptions and write a
-      `_(section failed: …)_` placeholder into state — never crash the graph
-
-**Stretch**
-- [ ] Wire LangGraph's SQLite checkpointer to the same DB so failed runs are
-      resumable (overkill for this app, but the pattern is useful)
-- [ ] Add a `langgraph.json` at `backend/` so you can open the graph
-      in **LangGraph Studio** and watch state flow node-by-node (n8n-style
-      visual debugger). Once `app/graph.py` exports a compiled `graph`
-      symbol, this file is all you need:
+- [x] Create `backend/app/graph.py` with a `BriefState` TypedDict and a
+      `StateGraph` that fans
+      `START → [calendar | gmail | youtube] → compose → deliver → END`.
+      Export the compiled graph at module scope as `graph = builder.compile()`.
+- [x] Each agent node catches its own exceptions and writes a
+      `_(section failed: …)_` placeholder into state — never crashes the graph.
+- [x] Refactor `workflow.run_morning_brief()` to call `graph.invoke({})`
+      instead of calling functions in sequence. Keep the `Run`/`Brief`
+      DB bookkeeping in `workflow.py` — the graph stays pure.
+- [x] Add `langgraph-cli[inmem]>=0.1.55` to the `dev` extras in
+      `backend/pyproject.toml`.
+- [x] Create `langgraph.json` at the **repo root**:
 
       ```json
       {
-        "dependencies": ["."],
-        "graphs": {
-          "morning_brief": "./app/graph.py:graph"
-        },
-        "env": ".env"
+        "dependencies": ["./backend"],
+        "graphs": { "morning_brief": "./backend/app/graph.py:graph" },
+        "env": "./backend/.env",
+        "python_version": "3.11"
       }
       ```
 
-      Then `langgraph dev` from `backend/` opens Studio in the
-      browser. Useful while iterating on the graph; not needed at runtime.
+- [ ] *(optional — only when you want it)* `pip install -e ".[dev]"` from
+      `backend/`, then `langgraph dev` from the repo root. Click the printed
+      Studio URL and confirm you can see the graph render, submit `{}`, and
+      watch all five nodes execute.
 
-**DOD**: `/run-now` produces the same Telegram message as before, but you
-can see in logs that the three fetches ran in parallel.
+**Stretch**
+- [ ] Wire LangGraph's SQLite checkpointer to the same DB so failed runs are
+      resumable and Studio gets time-travel debugging:
+      `from langgraph.checkpoint.sqlite import SqliteSaver` → pass to
+      `.compile(checkpointer=...)`. Overkill for this app, but the pattern
+      is useful.
+- [ ] Sign up for a free LangSmith account and set
+      `LANGCHAIN_TRACING_V2=true` + `LANGCHAIN_API_KEY=...` in `.env` so
+      every run (including production 08:00 launchd runs) shows up as a
+      trace alongside the graph view.
 
-### Week 9 — Bulletproof scheduling (~3 hrs)
+**DOD**: `/run-now` produces the same Telegram message as before, you can
+see in logs that the three fetches ran in parallel, **and** `langgraph dev`
+opens Studio with a clickable graph that runs end-to-end against your real
+credentials.
+
+### Week 9 — Bulletproof scheduling (~3 hrs)  ✅ done (alarm test pending)
 
 **Must-do**
-- [ ] If you didn't already in week 1: install the launchd plist and verify
-      it runs at 08:00 next morning
-- [ ] Add structured logs to `data/launchd.out.log` so you can see what
-      happened overnight
-- [ ] Failure alarm: if `run_morning_brief()` raises, the Telegram fallback
-      ping already exists — make sure you've actually seen it work by
-      temporarily breaking something on purpose
+- [x] Install the launchd plist and verify it runs — confirmed via
+      `launchctl kickstart` test-fire delivering a real Telegram brief
+- [x] `data/launchd.out.log` / `data/launchd.err.log` are getting written
+- [ ] Failure alarm: temporarily break something on purpose (e.g. set
+      `OPENAI_API_KEY=sk-bad`) and confirm the ⚠️ fallback Telegram fires.
+      *(quick test, do this whenever convenient)*
+
+**Notes on the install**
+- macOS deprecated `launchctl load`; use
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<plist>` instead.
+- A copied plist may carry the `com.apple.quarantine` extended attribute;
+  clear with `xattr -c <plist>` before bootstrap.
+- If `bootstrap` says "Input/output error", the service may already be
+  loaded (silent earlier success). Verify with
+  `launchctl print gui/$(id -u)/com.personalassistant.morning` and clean
+  up with `launchctl bootout gui/$(id -u)/com.personalassistant.morning`.
 
 **Stretch**
 - [ ] Add a `GET /history.html` index page so you can scroll past briefs
       from your phone
 
 **DOD**: A full week with zero manual `/run-now` calls. The brief just shows
-up at 08:00.
+up at 08:00. *(in progress — first automated run scheduled tomorrow)*
 
 ---
 

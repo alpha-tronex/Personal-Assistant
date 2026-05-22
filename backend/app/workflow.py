@@ -1,8 +1,13 @@
-"""Top-level orchestrator: gather sources -> compose brief -> deliver.
+"""Top-level orchestrator: open a Run row, invoke the graph, persist the Brief.
 
-Steps 1-4 implementation: only Calendar is wired. Gmail and YouTube agents
-will be added in later steps. Once all three are in, this will be replaced
-by a proper LangGraph (parallel) graph in app/graph.py.
+The actual fetch → compose → deliver pipeline lives in `app/graph.py` as a
+LangGraph `StateGraph`. This module is intentionally thin: its only jobs
+are persistence (the `Run` and `Brief` rows) and surfacing failures via
+the Telegram fallback ping.
+
+Keeping persistence outside the graph lets LangGraph Studio re-invoke the
+graph against real credentials during development without polluting the
+`runs` table on every click.
 """
 
 from __future__ import annotations
@@ -10,9 +15,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .agents.calendar_agent import summarize_today_calendar
-from .agents.compose_agent import compose_brief
 from .db import session_scope
+from .graph import graph
 from .models import Brief, Run
 from .tools.telegram import send_telegram_message
 
@@ -33,20 +37,17 @@ def run_morning_brief(trigger: str = "manual") -> int:
     logger.info("Run %d started (trigger=%s).", run_id, trigger)
     error: str | None = None
     body = ""
+    delivered_to: str | None = None
     try:
-        calendar_section = summarize_today_calendar()
+        result = graph.invoke({})
+        body = result.get("body", "")
+        delivered_to = result.get("delivered_to")
+        graph_error = result.get("error")
+        if graph_error and not delivered_to:
+            # The deliver node short-circuited (e.g. empty body). Treat as a
+            # run-level failure so the Telegram fallback fires below.
+            raise RuntimeError(graph_error)
 
-        # Placeholders for sources we'll wire up later.
-        gmail_section = "_(Gmail agent not yet wired — coming in step 5.)_"
-        youtube_section = "_(YouTube agent not yet wired — coming in step 6.)_"
-
-        body = compose_brief(
-            calendar_md=calendar_section,
-            gmail_md=gmail_section,
-            youtube_md=youtube_section,
-        )
-
-        delivered_to = send_telegram_message(body)
         with session_scope() as s:
             s.add(Brief(run_id=run_id, body_markdown=body, delivered_to=delivered_to))
             r = s.get(Run, run_id)
@@ -64,8 +65,9 @@ def run_morning_brief(trigger: str = "manual") -> int:
                 r.error = error
                 r.finished_at = datetime.utcnow()
             if body:
+                # Save whatever we composed even if delivery failed — useful
+                # for the /history view.
                 s.add(Brief(run_id=run_id, body_markdown=body, delivered_to=None))
-        # Best-effort: also try to ping Telegram with the error so you know.
         try:
             send_telegram_message(f"⚠️ Morning brief failed:\n```\n{error}\n```")
         except Exception:  # noqa: BLE001

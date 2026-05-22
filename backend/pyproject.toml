@@ -41,6 +41,10 @@ dependencies = [
 dev = [
     "ruff>=0.6.0",
     "pytest>=8.3.0",
+    # LangGraph Studio dev server. The `[inmem]` extra avoids the Postgres
+    # dependency — fine for a single-user local app. Run `langgraph dev`
+    # from the repo root (where `langgraph.json` lives) to launch Studio.
+    "langgraph-cli[inmem]>=0.1.55",
 ]
 
 [build-system]

@@ -1,0 +1,8 @@
+{
+  "dependencies": ["./backend"],
+  "graphs": {
+    "morning_brief": "./backend/app/graph.py:graph"
+  },
+  "env": "./backend/.env",
+  "python_version": "3.11"
+}

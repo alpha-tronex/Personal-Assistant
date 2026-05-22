@@ -32,6 +32,19 @@ class Settings(BaseSettings):
     )
     google_token_path: str = Field(default="./data/token.json", alias="GOOGLE_TOKEN_PATH")
 
+    # Gmail filtering
+    # Gmail search query for the email agent. By default we exclude the
+    # Promotions tab so advertising / marketing mail never reaches the LLM.
+    gmail_query: str = Field(
+        default="newer_than:2d in:inbox -category:promotions",
+        alias="GMAIL_QUERY",
+    )
+    # Comma-separated case-insensitive substrings. Any sender email whose
+    # address contains one of these substrings will be skipped before the
+    # LLM call. Useful for the few promotional senders that don't end up
+    # in the Promotions tab (e.g. "no-reply@", "marketing@", "newsletter").
+    gmail_ignore_from: str = Field(default="", alias="GMAIL_IGNORE_FROM")
+
     # App
     app_timezone: str = Field(default="America/New_York", alias="APP_TIMEZONE")
     app_db_url: str = Field(default="sqlite:///./data/agentic.db", alias="APP_DB_URL")

@@ -22,7 +22,7 @@
         <string>/bin/bash</string>
         <string>-lc</string>
         <!-- Try the local FastAPI server first; if it's not up, run the workflow directly. -->
-        <string>curl -fsS -X POST http://127.0.0.1:8000/run-now &gt; /dev/null 2&gt;&amp;1 || (cd "/Users/alphathiam/Documents/GitHub/Personal Assistant/backend" &amp;&amp; .venv/bin/python -c 'from app.workflow import run_morning_brief; run_morning_brief("schedule")')</string>
+        <string>curl -fsS -X POST http://127.0.0.1:8000/run-now &gt; /dev/null 2&gt;&amp;1 || (cd "/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend" &amp;&amp; .venv/bin/python -c 'from app.workflow import run_morning_brief; run_morning_brief("schedule")')</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -34,9 +34,9 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/alphathiam/Documents/GitHub/Personal Assistant/backend/data/launchd.out.log</string>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/alphathiam/Documents/GitHub/Personal Assistant/backend/data/launchd.err.log</string>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/launchd.err.log</string>
 
     <key>RunAtLoad</key>
     <false/>
