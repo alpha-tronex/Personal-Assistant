@@ -47,31 +47,26 @@ def _parse_event_dt(node: dict[str, Any], tz: ZoneInfo) -> tuple[datetime, bool]
     raise ValueError(f"Unrecognized event time node: {node}")
 
 
-def fetch_today_events(calendar_id: str = "primary") -> list[CalendarEvent]:
-    """Return events on the user's primary calendar for today (local time)."""
-    settings = get_settings()
-    tz = ZoneInfo(settings.app_timezone)
+def _is_holiday_calendar(cal: dict) -> bool:
+    """Return True for read-only holiday group calendars we want to skip."""
+    cal_id: str = cal.get("id", "")
+    return "holiday@group.v.calendar.google.com" in cal_id
 
-    creds = load_credentials()
-    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
 
-    now_local = datetime.now(tz)
-    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = day_start + timedelta(days=1)
-
-    logger.info(
-        "Fetching calendar events %s -> %s (%s)",
-        day_start.isoformat(),
-        day_end.isoformat(),
-        settings.app_timezone,
-    )
-
+def _fetch_events_for_calendar(
+    service,
+    calendar_id: str,
+    time_min: str,
+    time_max: str,
+    tz: ZoneInfo,
+) -> list[CalendarEvent]:
+    """Fetch and parse events from a single calendar."""
     resp = (
         service.events()
         .list(
             calendarId=calendar_id,
-            timeMin=day_start.isoformat(),
-            timeMax=day_end.isoformat(),
+            timeMin=time_min,
+            timeMax=time_max,
             singleEvents=True,
             orderBy="startTime",
             maxResults=50,
@@ -104,3 +99,46 @@ def fetch_today_events(calendar_id: str = "primary") -> list[CalendarEvent]:
             )
         )
     return events
+
+
+def fetch_today_events() -> list[CalendarEvent]:
+    """Return today's events merged from all personal calendars (local time).
+
+    Holiday group calendars are skipped automatically. Events are sorted by
+    start time across all calendars.
+    """
+    settings = get_settings()
+    tz = ZoneInfo(settings.app_timezone)
+
+    creds = load_credentials()
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+
+    now_local = datetime.now(tz)
+    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+    time_min = day_start.isoformat()
+    time_max = day_end.isoformat()
+
+    # Collect all calendars, skip holiday group calendars
+    cal_list = service.calendarList().list().execute()
+    calendars = [c for c in cal_list.get("items", []) if not _is_holiday_calendar(c)]
+
+    logger.info(
+        "Fetching events %s -> %s across %d calendar(s): %s",
+        time_min,
+        time_max,
+        len(calendars),
+        [c.get("summary", c["id"]) for c in calendars],
+    )
+
+    all_events: list[CalendarEvent] = []
+    for cal in calendars:
+        try:
+            events = _fetch_events_for_calendar(service, cal["id"], time_min, time_max, tz)
+            all_events.extend(events)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Skipping calendar %s: %s", cal.get("summary", cal["id"]), e)
+
+    # Sort merged results by start time (all-day events sort to top via midnight)
+    all_events.sort(key=lambda e: e.start)
+    return all_events
