@@ -119,9 +119,9 @@ def fetch_today_events() -> list[CalendarEvent]:
     time_min = day_start.isoformat()
     time_max = day_end.isoformat()
 
-    # Collect all calendars, skip holiday group calendars
+    # Collect all calendars
     cal_list = service.calendarList().list().execute()
-    calendars = [c for c in cal_list.get("items", []) if not _is_holiday_calendar(c)]
+    calendars = cal_list.get("items", [])
 
     logger.info(
         "Fetching events %s -> %s across %d calendar(s): %s",
