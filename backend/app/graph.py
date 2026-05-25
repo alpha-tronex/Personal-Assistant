@@ -33,6 +33,7 @@ from .agents.calendar_agent import summarize_today_calendar
 from .agents.compose_agent import compose_brief
 from .agents.gmail_agent import summarize_gmail
 from .agents.reminders_agent import summarize_reminders
+from .agents.youtube_agent import summarize_youtube_uploads
 from .tools.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
@@ -75,8 +76,7 @@ def gmail_node(state: BriefState) -> BriefState:
 
 
 def youtube_node(state: BriefState) -> BriefState:
-    # Phase 6 will replace this with `summarize_youtube_uploads()`.
-    return {"youtube_md": "_(YouTube agent not yet wired — phase 6.)_"}
+    return {"youtube_md": _safe_section("youtube", summarize_youtube_uploads)}
 
 
 def reminders_node(state: BriefState) -> BriefState:
