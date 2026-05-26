@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Transcript budget: ~15k tokens. Split evenly if over limit so we keep
 # both the beginning and end of long videos.
 TRANSCRIPT_CHAR_LIMIT = 60_000
+MAX_VIDEOS_PER_CHANNEL = 3      # cap to keep the brief readable
 
 
 @dataclass
@@ -137,7 +138,11 @@ def fetch_new_videos(handles: list[str]) -> list[YouTubeVideo]:
             logger.warning("Could not fetch uploads for %s: %s", handle, e)
             continue
 
+        channel_count = 0
         for item in resp.get("items", []):
+            if channel_count >= MAX_VIDEOS_PER_CHANNEL:
+                break
+
             # contentDetails.videoPublishedAt is the actual publish time
             published_str = (
                 item.get("contentDetails", {}).get("videoPublishedAt")
@@ -176,6 +181,7 @@ def fetch_new_videos(handles: list[str]) -> list[YouTubeVideo]:
                     transcript=transcript,
                 )
             )
+            channel_count += 1
 
     all_videos.sort(key=lambda v: (v.channel_title, v.published_at))
     return all_videos
