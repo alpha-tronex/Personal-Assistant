@@ -19,6 +19,7 @@ from .db import session_scope
 from .graph import graph
 from .models import Brief, Run
 from .tools.telegram import send_telegram_message
+from .tools.token_health import check_and_warn_token_age
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ def run_morning_brief(trigger: str = "manual") -> int:
                 r.status = "ok"
                 r.finished_at = datetime.utcnow()
         logger.info("Run %d finished OK (delivered to %s).", run_id, delivered_to)
+        check_and_warn_token_age()
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         logger.exception("Run %d failed.", run_id)
