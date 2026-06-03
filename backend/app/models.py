@@ -50,6 +50,24 @@ class Reminder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PendingReply(Base):
+    """A WhatsApp message awaiting the user's approval before a reply is sent."""
+
+    __tablename__ = "pending_replies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wa_from: Mapped[str] = mapped_column(String(64))                           # e.g. "15551234567@c.us"
+    contact_name: Mapped[str] = mapped_column(String(128))
+    wa_message_id: Mapped[str] = mapped_column(String(255), unique=True)       # dedup
+    incoming_body: Mapped[str] = mapped_column(Text)
+    suggested_reply: Mapped[str] = mapped_column(Text)
+    sent_reply: Mapped[str | None] = mapped_column(Text, nullable=True)        # what was actually sent
+    telegram_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|sent|dismissed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class SeenItem(Base):
     """Dedup table so we don't re-summarize a video / email twice."""
 

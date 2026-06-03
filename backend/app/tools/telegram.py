@@ -113,6 +113,41 @@ def send_telegram_message(body_markdown: str, *, chat_id: str | None = None) -> 
     return target
 
 
+def send_wa_notification(
+    contact_name: str,
+    incoming_body: str,
+    suggested_reply: str,
+) -> int:
+    """Send a WhatsApp message notification and return the Telegram message_id.
+
+    The returned message_id is stored in PendingReply so the Telegram poller
+    can match the user's reply-to-message back to the right pending record.
+
+    Sent as plain text to avoid MarkdownV2 escaping issues with arbitrary
+    WhatsApp message content.
+    """
+    settings = get_settings()
+    target = settings.telegram_chat_id
+    if not target:
+        raise TelegramError("TELEGRAM_CHAT_ID is not set.")
+
+    text = (
+        f"📱 WhatsApp from {contact_name}\n\n"
+        f'"{incoming_body}"\n\n'
+        f"💬 Suggested reply:\n{suggested_reply}\n\n"
+        f"Reply 'ok' to send · 'skip' to dismiss · or type your own reply"
+    )
+    result = _post(
+        "sendMessage",
+        {
+            "chat_id": target,
+            "text": text,
+            "disable_web_page_preview": True,
+        },
+    )
+    return result["message_id"]
+
+
 def discover_chat_id() -> str | None:
     """Inspect getUpdates and return the chat_id of the most recent inbound DM.
 

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the Node.js WhatsApp bridge running continuously on :3000.
+
+  IMPORTANT: Run the first-time QR setup BEFORE installing this plist:
+    cd whatsapp_service && npm install && node index.js
+    (Scan the QR code, wait for "WhatsApp client ready", then Ctrl+C)
+  The session is saved in whatsapp_service/.wwebjs_auth/ — subsequent
+  starts won't need the QR code.
+
+  Install (after first-time setup):
+    cp launchd/com.personalassistant.whatsapp.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.personalassistant.whatsapp.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.personalassistant.whatsapp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>index.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/whatsapp_service</string>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/whatsapp.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/whatsapp.err.log</string>
+</dict>
+</plist>

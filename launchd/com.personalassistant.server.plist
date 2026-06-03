@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the FastAPI server (uvicorn) running continuously on :8000.
+  Required for the WhatsApp bridge to forward incoming messages.
+
+  Install:
+    cp launchd/com.personalassistant.server.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.personalassistant.server.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.personalassistant.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/.venv/bin/uvicorn</string>
+        <string>app.main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend</string>
+
+    <!-- Restart automatically if the process crashes -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/server.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend/data/server.err.log</string>
+</dict>
+</plist>

@@ -21,7 +21,9 @@ from sqlalchemy import desc, select
 from .config import get_settings
 from .db import init_db, session_scope
 from .models import Brief, Reminder, Run
+from .routers.whatsapp import router as whatsapp_router
 from .scheduler import start_scheduler, stop_scheduler
+from .telegram_poller import start_poller, stop_poller
 from .workflow import run_morning_brief
 
 logger = logging.getLogger(__name__)
@@ -36,15 +38,18 @@ async def lifespan(app: FastAPI):
     )
     init_db()
     start_scheduler()
+    start_poller()
     logger.info("Agentic app started.")
     try:
         yield
     finally:
+        stop_poller()
         stop_scheduler()
         logger.info("Agentic app stopped.")
 
 
 app = FastAPI(title="Personal Assistant — Morning Brief", lifespan=lifespan)
+app.include_router(whatsapp_router)
 
 
 @app.get("/healthz")
