@@ -15,7 +15,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..agents.whatsapp_agent import suggest_reply
 from ..db import session_scope
@@ -70,6 +70,16 @@ def _process(payload: WAIncoming) -> None:
         s.add(pending)
         s.flush()
         pending_id = pending.id
+        # Count pending (including this new row) for the queue label
+        total_pending: int = s.execute(
+            select(func.count()).select_from(PendingReply).where(PendingReply.status == "pending")
+        ).scalar() or 1
+        position: int = s.execute(
+            select(func.count()).select_from(PendingReply).where(
+                PendingReply.status == "pending",
+                PendingReply.id <= pending_id,
+            )
+        ).scalar() or 1
 
     # --- Notify via Telegram ---
     try:
@@ -77,6 +87,9 @@ def _process(payload: WAIncoming) -> None:
             contact_name=payload.contact_name,
             incoming_body=payload.body,
             suggested_reply=suggestion,
+            pending_id=pending_id,
+            position=position,
+            total=total_pending,
         )
         # Store the Telegram message_id for reply matching
         with session_scope() as s:
