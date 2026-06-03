@@ -3,27 +3,118 @@
  *
  * What it does:
  *   - Connects to WhatsApp Web via QR code (first run only — session is cached).
- *   - Listens for incoming DMs and forwards them to FastAPI POST /whatsapp/incoming.
+ *   - On ready: replays any DMs from the last 24 hours that arrived while
+ *     the bridge was offline (catch-up). FastAPI deduplicates via message_id.
+ *   - Listens for new incoming DMs and forwards them to FastAPI POST /whatsapp/incoming.
  *   - Exposes POST /send so FastAPI can send approved replies back to WhatsApp.
- *   - Exposes GET /healthz for status checks.
+ *   - Exposes GET /healthz and GET /stats for monitoring.
  *
  * Ports:
  *   - This bridge listens on :3000
  *   - FastAPI is expected on :8000
- *
- * First-time setup:
- *   cd whatsapp_service && npm install && node index.js
- *   Scan the QR code with WhatsApp → Settings → Linked Devices → Link a Device.
- *   Subsequent starts reuse the saved session (no QR needed).
  */
 
-const { Client, LocalAuth, MessageTypes } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const axios = require('axios');
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
 const PORT = parseInt(process.env.BRIDGE_PORT || '3000', 10);
+const CATCHUP_HOURS = 24;   // how far back to look for missed messages on startup
+
+// ---------------------------------------------------------------------------
+// Stats counters
+// ---------------------------------------------------------------------------
+
+const stats = {
+    startedAt: new Date().toISOString(),
+    received: 0,       // real-time messages received since startup
+    forwarded: 0,      // successfully forwarded to FastAPI
+    failed: 0,         // failed to forward
+    catchupSent: 0,    // messages replayed during startup catch-up
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async function forwardToFastAPI(payload, { isCatchup = false } = {}) {
+    try {
+        await axios.post(`${FASTAPI_URL}/whatsapp/incoming`, payload, { timeout: 10_000 });
+        if (isCatchup) {
+            stats.catchupSent++;
+        } else {
+            stats.forwarded++;
+        }
+        return true;
+    } catch (err) {
+        if (!isCatchup) stats.failed++;
+        console.error(
+            `⚠️  Failed to forward${isCatchup ? ' (catch-up)' : ''} to FastAPI:`,
+            err.message,
+        );
+        return false;
+    }
+}
+
+function isGroupJid(jid) {
+    return jid.endsWith('@g.us') || jid.endsWith('@newsletter');
+}
+
+// ---------------------------------------------------------------------------
+// Startup catch-up — replay missed DMs from the last CATCHUP_HOURS
+// ---------------------------------------------------------------------------
+
+async function catchUpMissedMessages() {
+    const cutoff = Math.floor(Date.now() / 1000) - CATCHUP_HOURS * 3600;
+    console.log(`🔄 Catch-up: scanning DMs from the last ${CATCHUP_HOURS} hours…`);
+
+    let chats;
+    try {
+        chats = await client.getChats();
+    } catch (err) {
+        console.error('⚠️  Could not fetch chats for catch-up:', err.message);
+        return;
+    }
+
+    const dmChats = chats.filter(c => !c.isGroup && !isGroupJid(c.id._serialized));
+    let total = 0;
+
+    for (const chat of dmChats) {
+        let messages;
+        try {
+            messages = await chat.fetchMessages({ limit: 20 });
+        } catch {
+            continue;
+        }
+
+        for (const msg of messages) {
+            if (msg.fromMe) continue;
+            if (msg.timestamp < cutoff) continue;
+
+            const body = msg.hasMedia
+                ? '[Media message — open WhatsApp to view]'
+                : (msg.body || '').trim();
+            if (!body) continue;
+
+            const contact = await msg.getContact().catch(() => null);
+            const name = contact?.pushname || contact?.name || msg.from.replace('@c.us', '');
+
+            await forwardToFastAPI({
+                wa_from: msg.from,
+                contact_name: name,
+                body,
+                timestamp: msg.timestamp,
+                message_id: msg.id._serialized,
+            }, { isCatchup: true });
+
+            total++;
+        }
+    }
+
+    console.log(`✅ Catch-up complete — ${total} message(s) replayed (FastAPI deduplicates).`);
+}
 
 // ---------------------------------------------------------------------------
 // WhatsApp client
@@ -54,51 +145,47 @@ client.on('auth_failure', (msg) => {
 
 client.on('ready', () => {
     console.log('✅ WhatsApp client ready.');
+    // Run catch-up in background — don't block the ready event.
+    catchUpMissedMessages().catch(err =>
+        console.error('⚠️  Catch-up failed:', err.message)
+    );
 });
 
 client.on('disconnected', (reason) => {
     console.warn('⚠️  WhatsApp disconnected:', reason);
-    // launchd will restart the process if it exits.
-    process.exit(1);
+    process.exit(1);   // launchd restarts automatically
 });
 
 client.on('message', async (msg) => {
-    // Skip own messages, group chats, status updates, and non-text messages.
     if (msg.fromMe) return;
     if (msg.from === 'status@broadcast') return;
-    if (msg.from.endsWith('@g.us')) return;    // group chat JID suffix
+    if (isGroupJid(msg.from)) return;
 
     const body = msg.hasMedia
         ? '[Media message — open WhatsApp to view]'
         : (msg.body || '').trim();
-
     if (!body) return;
+
+    stats.received++;
 
     const contact = await msg.getContact().catch(() => null);
     const name = contact?.pushname || contact?.name || msg.from.replace('@c.us', '');
 
-    const payload = {
+    console.log(`📨 New DM from ${name}: ${body.slice(0, 60)}${body.length > 60 ? '…' : ''}`);
+
+    await forwardToFastAPI({
         wa_from: msg.from,
         contact_name: name,
         body,
         timestamp: msg.timestamp,
         message_id: msg.id._serialized,
-    };
-
-    console.log(`📨 New DM from ${name}: ${body.slice(0, 60)}${body.length > 60 ? '…' : ''}`);
-
-    try {
-        await axios.post(`${FASTAPI_URL}/whatsapp/incoming`, payload, { timeout: 10_000 });
-    } catch (err) {
-        console.error('⚠️  Failed to forward to FastAPI:', err.message);
-        // Message is still visible in WhatsApp — no data is permanently lost.
-    }
+    });
 });
 
 client.initialize();
 
 // ---------------------------------------------------------------------------
-// Express server — receives send commands from Python
+// Express server
 // ---------------------------------------------------------------------------
 
 const app = express();
@@ -106,6 +193,14 @@ app.use(express.json());
 
 app.get('/healthz', (_req, res) => {
     res.json({ ok: true, state: client.info ? 'ready' : 'connecting' });
+});
+
+app.get('/stats', (_req, res) => {
+    res.json({
+        ...stats,
+        uptimeSeconds: Math.floor(process.uptime()),
+        state: client.info ? 'ready' : 'connecting',
+    });
 });
 
 app.post('/send', async (req, res) => {
