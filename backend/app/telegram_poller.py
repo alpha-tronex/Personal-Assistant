@@ -208,13 +208,17 @@ def _handle_callback_query(cq: dict) -> None:
 
         # ── ✏️ Edit ──────────────────────────────────────────────────────────
         elif action == "wa_edit":
-            # Prompt the user to reply-to the notification with their custom text.
-            # Buttons stay in place; existing reply-to logic handles the text.
-            answer_callback_query(
-                cq_id,
-                "Reply to the notification with your custom message.",
-            )
-            logger.debug("Edit requested for pending #%d — awaiting reply-to text.", pending_id)
+            # Send the suggested reply as a copyable message so the user can
+            # long-press → copy → modify it, then reply to the notification.
+            answer_callback_query(cq_id, "Copy the text below, edit it, then reply to the notification.")
+            if chat_id:
+                _send_text(
+                    chat_id,
+                    f"✏️ Suggested reply for {pending.contact_name} "
+                    f"(copy, modify, then reply to the notification above ↑):\n\n"
+                    f"{pending.suggested_reply}",
+                )
+            logger.debug("Edit requested for pending #%d — suggestion sent as copyable text.", pending_id)
 
         else:
             answer_callback_query(cq_id, "Unknown action.", alert=True)
