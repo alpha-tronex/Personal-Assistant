@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from ..agents.whatsapp_agent import suggest_reply
 from ..db import session_scope
 from ..models import PendingReply
-from ..tools.telegram import send_wa_notification
+from ..tools.telegram import TelegramError, send_telegram_message, send_wa_notification
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,6 +32,26 @@ class WAIncoming(BaseModel):
     body: str
     timestamp: int
     message_id: str
+
+
+class WASilenceAlert(BaseModel):
+    silent_for_hours: float
+
+
+@router.post("/whatsapp/silence-alert", status_code=202)
+def whatsapp_silence_alert(payload: WASilenceAlert):
+    """Called by the Node.js bridge watchdog when no messages have arrived for too long."""
+    hours = payload.silent_for_hours
+    logger.warning("WhatsApp bridge silence alert: no messages for %.1f hours.", hours)
+    try:
+        send_telegram_message(
+            f"⚠️ WhatsApp bridge has received no messages for {hours:.1f} hours.\n\n"
+            f"This may mean the connection dropped silently. "
+            f"Check /stats at http://127.0.0.1:3000/stats or restart the bridge if needed."
+        )
+    except TelegramError as e:
+        logger.error("Failed to send silence alert via Telegram: %s", e)
+    return {"status": "alerted"}
 
 
 @router.post("/whatsapp/incoming", status_code=202)

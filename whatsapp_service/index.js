@@ -21,11 +21,15 @@ const axios = require('axios');
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
 const PORT = parseInt(process.env.BRIDGE_PORT || '3000', 10);
-const CATCHUP_HOURS = 24;           // how far back to look for missed messages on startup
-const WATCHDOG_INTERVAL_MS = 60_000; // check client health every 60 s
+const CATCHUP_HOURS = 24;             // how far back to look for missed messages on startup
+const WATCHDOG_INTERVAL_MS = 60_000;  // check client health every 60 s
+const SILENCE_THRESHOLD_MS = 6 * 60 * 60 * 1000;  // alert after 6 h with no messages
+const SILENCE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // re-alert at most every 4 h
+const DAYTIME_START_HOUR = 8;   // don't alert before 8 am
+const DAYTIME_END_HOUR   = 22;  // don't alert after 10 pm
 
 // ---------------------------------------------------------------------------
-// Stats counters
+// Stats counters + silence tracking
 // ---------------------------------------------------------------------------
 
 const stats = {
@@ -35,6 +39,11 @@ const stats = {
     failed: 0,         // failed to forward
     catchupSent: 0,    // messages replayed during startup catch-up
 };
+
+// Tracks the last time any real-time message was received (or catch-up found
+// a recent message). Initialised to now so we don't alert right after startup.
+let lastMessageAt = Date.now();
+let lastSilenceAlertAt = 0;  // epoch 0 = never alerted
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,6 +90,7 @@ async function catchUpMissedMessages() {
 
     const dmChats = chats.filter(c => !c.isGroup && !isGroupJid(c.id._serialized));
     let total = 0;
+    let mostRecentTimestamp = 0;
 
     for (const chat of dmChats) {
         let messages;
@@ -110,11 +120,22 @@ async function catchUpMissedMessages() {
                 message_id: msg.id._serialized,
             }, { isCatchup: true });
 
+            if (msg.timestamp > mostRecentTimestamp) mostRecentTimestamp = msg.timestamp;
             total++;
         }
     }
 
     console.log(`✅ Catch-up complete — ${total} message(s) replayed (FastAPI deduplicates).`);
+
+    // If catch-up found any messages from the last SILENCE_THRESHOLD_MS window,
+    // reset the silence clock so we don't false-alarm right after a restart.
+    if (mostRecentTimestamp > 0) {
+        const ageMs = Date.now() - mostRecentTimestamp * 1000;
+        if (ageMs < SILENCE_THRESHOLD_MS) {
+            lastMessageAt = Date.now() - ageMs;
+            console.log(`🕐 Silence clock reset to ${new Date(lastMessageAt).toISOString()} based on catch-up.`);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,9 +171,25 @@ client.on('auth_failure', (msg) => {
 
 let _watchdogTimer = null;
 
+async function sendSilenceAlert(silentForMs) {
+    const hours = (silentForMs / 3_600_000).toFixed(1);
+    try {
+        await axios.post(
+            `${FASTAPI_URL}/whatsapp/silence-alert`,
+            { silent_for_hours: parseFloat(hours) },
+            { timeout: 8_000 },
+        );
+        lastSilenceAlertAt = Date.now();
+        console.warn(`⚠️  Silence alert sent (${hours}h with no messages).`);
+    } catch (err) {
+        console.error('⚠️  Failed to send silence alert:', err.message);
+    }
+}
+
 function startWatchdog() {
     if (_watchdogTimer) return;
     _watchdogTimer = setInterval(async () => {
+        // ── 1. Connection health ───────────────────────────────────────────
         try {
             const state = await client.getState();
             if (state !== 'CONNECTED') {
@@ -162,6 +199,17 @@ function startWatchdog() {
         } catch (err) {
             console.error('❌ Watchdog: client health check failed — restarting.', err.message);
             process.exit(1);
+        }
+
+        // ── 2. Silence detection ───────────────────────────────────────────
+        const now = Date.now();
+        const hour = new Date().getHours();
+        const isDaytime = hour >= DAYTIME_START_HOUR && hour < DAYTIME_END_HOUR;
+        const silentForMs = now - lastMessageAt;
+        const cooldownExpired = (now - lastSilenceAlertAt) > SILENCE_ALERT_COOLDOWN_MS;
+
+        if (isDaytime && silentForMs > SILENCE_THRESHOLD_MS && cooldownExpired) {
+            await sendSilenceAlert(silentForMs);
         }
     }, WATCHDOG_INTERVAL_MS);
 
@@ -195,6 +243,7 @@ client.on('message', async (msg) => {
     if (!body) return;
 
     stats.received++;
+    lastMessageAt = Date.now();  // reset silence clock
 
     const contact = await msg.getContact().catch(() => null);
     const name = contact?.pushname || contact?.name || msg.from.replace('@c.us', '');
@@ -228,6 +277,8 @@ app.get('/stats', (_req, res) => {
         ...stats,
         uptimeSeconds: Math.floor(process.uptime()),
         state: client.info ? 'ready' : 'connecting',
+        lastMessageAt: new Date(lastMessageAt).toISOString(),
+        silentForMinutes: Math.floor((Date.now() - lastMessageAt) / 60_000),
     });
 });
 
