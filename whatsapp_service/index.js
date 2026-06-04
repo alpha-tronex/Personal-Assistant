@@ -21,7 +21,8 @@ const axios = require('axios');
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
 const PORT = parseInt(process.env.BRIDGE_PORT || '3000', 10);
-const CATCHUP_HOURS = 24;   // how far back to look for missed messages on startup
+const CATCHUP_HOURS = 24;           // how far back to look for missed messages on startup
+const WATCHDOG_INTERVAL_MS = 60_000; // check client health every 60 s
 
 // ---------------------------------------------------------------------------
 // Stats counters
@@ -143,8 +144,35 @@ client.on('auth_failure', (msg) => {
     console.error('   Delete .wwebjs_auth/ and restart to re-scan the QR code.');
 });
 
+// ---------------------------------------------------------------------------
+// Watchdog — exits if the Puppeteer page detaches or WA goes silent
+// ---------------------------------------------------------------------------
+
+let _watchdogTimer = null;
+
+function startWatchdog() {
+    if (_watchdogTimer) return;
+    _watchdogTimer = setInterval(async () => {
+        try {
+            const state = await client.getState();
+            if (state !== 'CONNECTED') {
+                console.error(`❌ Watchdog: unexpected client state "${state}" — restarting.`);
+                process.exit(1);
+            }
+        } catch (err) {
+            console.error('❌ Watchdog: client health check failed — restarting.', err.message);
+            process.exit(1);
+        }
+    }, WATCHDOG_INTERVAL_MS);
+
+    // Don't let the timer keep Node alive on its own
+    _watchdogTimer.unref();
+    console.log(`🐕 Watchdog started (every ${WATCHDOG_INTERVAL_MS / 1000}s).`);
+}
+
 client.on('ready', () => {
     console.log('✅ WhatsApp client ready.');
+    startWatchdog();
     // Run catch-up in background — don't block the ready event.
     catchUpMissedMessages().catch(err =>
         console.error('⚠️  Catch-up failed:', err.message)
