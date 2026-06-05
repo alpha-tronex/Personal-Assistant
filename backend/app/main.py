@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 
@@ -50,6 +50,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Personal Assistant — Morning Brief", lifespan=lifespan)
 app.include_router(whatsapp_router)
+
+
+@app.get("/")
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/settings")
 
 
 @app.get("/healthz")
