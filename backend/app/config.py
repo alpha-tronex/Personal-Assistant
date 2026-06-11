@@ -30,7 +30,13 @@ class Settings(BaseSettings):
     google_credentials_path: str = Field(
         default="./data/credentials.json", alias="GOOGLE_CREDENTIALS_PATH"
     )
+    google_web_credentials_path: str = Field(
+        default="./data/credentials_web.json", alias="GOOGLE_WEB_CREDENTIALS_PATH"
+    )
     google_token_path: str = Field(default="./data/token.json", alias="GOOGLE_TOKEN_PATH")
+
+    # Re-auth secret — protects /reauth from public access
+    reauth_secret: str = Field(default="", alias="REAUTH_SECRET")
 
     # Gmail filtering
     # Gmail search query for the email agent. By default we exclude the
@@ -62,6 +68,10 @@ class Settings(BaseSettings):
     @property
     def google_credentials_file(self) -> Path:
         return self.resolve_path(self.google_credentials_path)
+
+    @property
+    def google_web_credentials_file(self) -> Path:
+        return self.resolve_path(self.google_web_credentials_path)
 
     @property
     def google_token_file(self) -> Path:

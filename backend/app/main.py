@@ -21,6 +21,7 @@ from sqlalchemy import desc, select
 from .config import get_settings
 from .db import init_db, session_scope
 from .models import Brief, Reminder, Run
+from .routers.reauth import router as reauth_router
 from .routers.whatsapp import router as whatsapp_router
 from .scheduler import start_scheduler, stop_scheduler
 from .telegram_poller import start_poller, stop_poller
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Personal Assistant — Morning Brief", lifespan=lifespan)
 app.include_router(whatsapp_router)
+app.include_router(reauth_router)
 
 
 @app.get("/")
