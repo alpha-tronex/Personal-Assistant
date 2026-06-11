@@ -35,14 +35,16 @@ router = APIRouter()
 
 REDIRECT_URI = "https://assistant.alphatronex.com/reauth/callback"
 
-# In-memory state store: {state_token: timestamp}
+# In-memory state store: {state_token: {"ts": float, "flow": Flow}}
+# We keep the original Flow object so the PKCE code_verifier is preserved
+# between the authorization URL and the token exchange.
 # State tokens expire after 10 minutes.
-_pending: dict[str, float] = {}
+_pending: dict[str, dict] = {}
 
 
 def _purge_expired() -> None:
     cutoff = time.time() - 600
-    expired = [k for k, v in _pending.items() if v < cutoff]
+    expired = [k for k, v in _pending.items() if v["ts"] < cutoff]
     for k in expired:
         del _pending[k]
 
@@ -76,7 +78,8 @@ def reauth_start(secret: str = Query(...)):
         prompt="consent",   # force refresh_token to be returned
         include_granted_scopes="true",
     )
-    _pending[state] = time.time()
+    # Store the whole flow object so the PKCE code_verifier survives into the callback
+    _pending[state] = {"ts": time.time(), "flow": flow}
     logger.info("Re-auth flow started (state=%s…)", state[:8])
     return RedirectResponse(auth_url)
 
@@ -87,17 +90,12 @@ def reauth_callback(code: str = Query(...), state: str = Query(...)):
     settings = get_settings()
 
     _purge_expired()
-    ts = _pending.pop(state, None)
-    if ts is None:
+    pending = _pending.pop(state, None)
+    if pending is None:
         raise HTTPException(400, "Invalid or expired OAuth state. Please start over.")
 
     try:
-        flow = Flow.from_client_secrets_file(
-            str(settings.google_web_credentials_file),
-            scopes=list(DEFAULT_SCOPES),
-            redirect_uri=REDIRECT_URI,
-            state=state,
-        )
+        flow: Flow = pending["flow"]
         flow.fetch_token(code=code)
         creds = flow.credentials
     except Exception as e:
