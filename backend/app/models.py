@@ -46,6 +46,7 @@ class Reminder(Base):
     day_of_week: Mapped[str | None] = mapped_column(String(16), nullable=True)   # "monday" … "sunday"
     day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)     # 1–31
     time: Mapped[str | None] = mapped_column(String(5), nullable=True)           # "HH:MM"
+    time_end: Mapped[str | None] = mapped_column(String(5), nullable=True)       # "HH:MM"
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

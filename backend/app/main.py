@@ -123,6 +123,7 @@ class ReminderIn(BaseModel):
     day_of_week: str | None = None
     day_of_month: int | None = None
     time: str | None = None
+    time_end: str | None = None
     enabled: bool = True
 
 
@@ -138,6 +139,7 @@ def _reminder_dict(r: Reminder) -> dict:
         "day_of_week": r.day_of_week,
         "day_of_month": r.day_of_month,
         "time": r.time,
+        "time_end": r.time_end,
         "enabled": r.enabled,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }
@@ -162,6 +164,7 @@ def create_reminder(body: ReminderIn) -> JSONResponse:
             day_of_week=body.day_of_week,
             day_of_month=body.day_of_month,
             time=body.time,
+            time_end=body.time_end,
             enabled=body.enabled,
         )
         s.add(r)
@@ -293,8 +296,11 @@ _SETTINGS_HTML = """<!doctype html>
       <input id="f-dom" type="number" min="1" max="31" placeholder="1 – 31">
     </div>
 
-    <label>Time (optional)</label>
+    <label>Start Time (optional)</label>
     <input id="f-time" type="time">
+
+    <label>End Time (optional)</label>
+    <input id="f-time-end" type="time">
 
     <button class="btn-add" onclick="addReminder()">Add Reminder</button>
   </div>
@@ -342,7 +348,7 @@ _SETTINGS_HTML = """<!doctype html>
       <div class="row" id="rem-${r.id}">
         <div class="row-label">
           <strong>${esc(r.label)}</strong>
-          <small>${freqLabel(r)}${r.time ? ' at ' + r.time : ''}</small>
+          <small>${freqLabel(r)}${r.time ? ' at ' + r.time + (r.time_end ? '–' + r.time_end : '') : ''}</small>
         </div>
         <label class="toggle" title="${r.enabled ? 'Enabled' : 'Disabled'}">
           <input type="checkbox" ${r.enabled ? 'checked' : ''}
@@ -369,11 +375,13 @@ _SETTINGS_HTML = """<!doctype html>
         day_of_week: freq === 'weekly' ? document.getElementById('f-dow').value : null,
         day_of_month: freq === 'monthly' ? dom : null,
         time: document.getElementById('f-time').value || null,
+        time_end: document.getElementById('f-time-end').value || null,
         enabled: true,
       }),
     });
     document.getElementById('f-label').value = '';
     document.getElementById('f-time').value = '';
+    document.getElementById('f-time-end').value = '';
     showToast('Reminder added ✓');
     load();
   }

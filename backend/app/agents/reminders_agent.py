@@ -40,11 +40,11 @@ def summarize_reminders() -> str:
             due = []
             for r in all_reminders:
                 if r.frequency == "daily":
-                    due.append((r.label, r.time))
+                    due.append((r.label, r.time, r.time_end))
                 elif r.frequency == "weekly" and r.day_of_week == today_dow:
-                    due.append((r.label, r.time))
+                    due.append((r.label, r.time, r.time_end))
                 elif r.frequency == "monthly" and r.day_of_month == today_dom:
-                    due.append((r.label, r.time))
+                    due.append((r.label, r.time, r.time_end))
     except Exception as e:  # noqa: BLE001
         logger.exception("Reminders fetch failed.")
         return f"🔁 *REMINDERS*\n_(failed to load: {e})_"
@@ -53,10 +53,11 @@ def summarize_reminders() -> str:
         return ""
 
     lines = [f"🔁 *REMINDERS*  ({len(due)})"]
-    for label, time in due:
+    for label, time, time_end in due:
         line = f"• *{label}*"
         if time:
-            line += f"  _{time}_"
+            time_str = f"{time}–{time_end}" if time_end else time
+            line += f"  _{time_str}_"
         lines.append(line)
 
     return "\n".join(lines)

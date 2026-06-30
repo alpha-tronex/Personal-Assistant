@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     )
     google_token_path: str = Field(default="./data/token.json", alias="GOOGLE_TOKEN_PATH")
 
+    # WhatsApp bridge URL — use http://172.17.0.1:3000 when backend runs in Docker
+    whatsapp_bridge_url: str = Field(
+        default="http://127.0.0.1:3000", alias="WHATSAPP_BRIDGE_URL"
+    )
+
     # Re-auth secret — protects /reauth from public access
     reauth_secret: str = Field(default="", alias="REAUTH_SECRET")
 

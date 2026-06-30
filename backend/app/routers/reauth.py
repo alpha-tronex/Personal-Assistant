@@ -19,7 +19,10 @@ Setup (one-time):
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import os
 import secrets
 import time
 
@@ -49,6 +52,15 @@ def _purge_expired() -> None:
         del _pending[k]
 
 
+def _generate_pkce() -> tuple[str, str]:
+    """Generate a PKCE code_verifier and code_challenge (S256)."""
+    verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    return verifier, challenge
+
+
 @router.get("/reauth")
 def reauth_start(secret: str = Query(...)):
     """Start the Google OAuth flow. Visit this URL in a browser to re-authorize."""
@@ -73,13 +85,18 @@ def reauth_start(secret: str = Query(...)):
         scopes=list(DEFAULT_SCOPES),
         redirect_uri=REDIRECT_URI,
     )
+
+    # Generate PKCE pair explicitly so we control the verifier during token exchange
+    code_verifier, code_challenge = _generate_pkce()
+
     auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",   # force refresh_token to be returned
         include_granted_scopes="true",
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
     )
-    # Store the whole flow object so the PKCE code_verifier survives into the callback
-    _pending[state] = {"ts": time.time(), "flow": flow}
+    _pending[state] = {"ts": time.time(), "flow": flow, "code_verifier": code_verifier}
     logger.info("Re-auth flow started (state=%s…)", state[:8])
     return RedirectResponse(auth_url)
 
@@ -96,7 +113,7 @@ def reauth_callback(code: str = Query(...), state: str = Query(...)):
 
     try:
         flow: Flow = pending["flow"]
-        flow.fetch_token(code=code)
+        flow.fetch_token(code=code, code_verifier=pending["code_verifier"])
         creds = flow.credentials
     except Exception as e:
         logger.exception("Token exchange failed")

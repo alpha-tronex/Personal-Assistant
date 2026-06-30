@@ -58,22 +58,27 @@ setup walkthrough lives in `backend/README.md`.
 
 | Path | Responsibility |
 |------|----------------|
-| `app/main.py` | FastAPI app: lifespan (DB + scheduler), HTTP endpoints. |
+| `app/main.py` | FastAPI app: lifespan (DB + scheduler + Telegram poller), HTTP endpoints including reminders CRUD and `/settings` UI. |
 | `app/scheduler.py` | APScheduler in-process daily cron. |
 | `app/workflow.py` | Thin wrapper: opens a `Run` row, invokes the graph, persists the `Brief`. |
 | `app/graph.py` | LangGraph `StateGraph`: source nodes → compose → deliver. Exports compiled `graph`. |
 | `app/config.py` | `Settings` from `.env` via pydantic-settings. |
 | `app/db.py` | SQLAlchemy engine + `session_scope()` context manager. |
-| `app/models.py` | `Run`, `Brief`, `SeenItem` ORM tables. |
+| `app/models.py` | `Run`, `Brief`, `SeenItem`, `Reminder`, `PendingReply` ORM tables. |
 | `app/agents/calendar_agent.py` | Today's calendar → markdown section. |
-| `app/agents/gmail_agent.py` | (step 5) Yesterday+today emails → summary. |
+| `app/agents/gmail_agent.py` | Yesterday+today emails → summary. |
 | `app/agents/youtube_agent.py` | (step 6) New uploads → per-video TL;DR. |
 | `app/agents/compose_agent.py` | Merges sections into the final brief body. |
+| `app/agents/whatsapp_agent.py` | Generates an AI reply suggestion for an incoming WhatsApp DM. |
+| `app/routers/whatsapp.py` | `POST /whatsapp/incoming` + `POST /whatsapp/silence-alert` — receives events from the Node.js bridge. |
+| `app/routers/reauth.py` | Google re-auth flow endpoint. |
+| `app/telegram_poller.py` | Long-poll daemon: handles WhatsApp reply approvals via inline buttons (`wa_send`, `wa_edit`, `wa_skip`) and `/pending` command. |
 | `app/tools/google_oauth.py` | Shared OAuth: load+refresh, interactive bootstrap. |
 | `app/tools/calendar.py` | Calendar Data API client + `CalendarEvent` model. |
-| `app/tools/gmail.py` | (step 5) Gmail API client. |
+| `app/tools/gmail.py` | Gmail API client. |
 | `app/tools/youtube.py` | (step 6) YouTube Data API + transcript fetch. |
-| `app/tools/telegram.py` | Telegram Bot API client (Markdown + chunking). |
+| `app/tools/telegram.py` | Telegram Bot API client (Markdown + chunking, inline keyboards, WA notifications). |
+| `app/tools/whatsapp.py` | HTTP client for the Node.js WhatsApp bridge (`send_whatsapp_message`). |
 | `scripts/google_login.py` | One-time browser OAuth flow. |
 | `scripts/test_telegram.py` | Verify bot token, discover chat_id, send test msg. |
 | `config/channels.yaml` | List of YouTube channels to watch. |
@@ -86,6 +91,9 @@ setup walkthrough lives in `backend/README.md`.
 runs(id PK, started_at, finished_at, status, trigger, error)
 briefs(id PK, run_id FK, created_at, body_markdown, delivered_to)
 seen_items(id PK, kind, external_id, seen_at)
+reminders(id PK, label, frequency, day_of_week, day_of_month, time, time_end, enabled, created_at)
+pending_replies(id PK, wa_from, contact_name, wa_message_id UNIQUE, incoming_body,
+                suggested_reply, sent_reply, telegram_message_id, status, created_at, sent_at)
 ```
 
 `seen_items` is the dedup primitive. The YouTube agent writes
@@ -93,22 +101,35 @@ seen_items(id PK, kind, external_id, seen_at)
 isn't summarized twice across runs. The Gmail agent could do the same with
 `messageId` if we ever shorten the lookback window.
 
+`reminders` stores user-defined recurring reminders managed via the `/settings` UI.
+Frequency is one of `daily | weekly | monthly`, with optional `day_of_week`, `day_of_month`,
+and time window fields.
+
+`pending_replies` tracks every incoming WhatsApp DM that has been surfaced to the user
+for approval. Status flows: `pending → sent | dismissed`.
+
 ## 4. Auth & secrets
 
-- **OpenAI**: `OPENAI_API_KEY` in `.env`. Used by Gmail + YouTube summarizers
-  (steps 5+). Calendar agent today is deterministic, no LLM.
+- **OpenAI**: `OPENAI_API_KEY` in `.env`. Used by Gmail, YouTube, and WhatsApp reply summarizers.
+  Calendar agent is deterministic, no LLM.
 - **Google**: One-time desktop OAuth flow (`scripts/google_login.py`) writes
   a refresh token to `data/token.json`. Runtime calls
   `google_oauth.load_credentials()` and silently refreshes the access token
   using `google.auth.transport.requests.Request`.
 - **Telegram**: Bot token + numeric chat id in `.env`. Chat id can be
   auto-discovered via `scripts/test_telegram.py`'s call to `getUpdates`.
+  The poller also uses the bot token for long-polling (`getUpdates`) and
+  answering inline keyboard callbacks (`answerCallbackQuery`).
+- **WhatsApp bridge**: A local Node.js process (port 3000) that bridges
+  WhatsApp Web to this FastAPI server. No external credential needed beyond
+  the QR-code scan that authenticates the WhatsApp session.
 
 All secrets stay on the local Mac. `data/` is `.gitignore`d. Outbound traffic
 is limited to:
 - `googleapis.com` (Calendar, Gmail, YouTube Data, OAuth refresh)
-- `api.telegram.org` (delivery)
-- `api.openai.com` (summarization, steps 5+)
+- `api.telegram.org` (delivery + long-poll)
+- `api.openai.com` (summarization)
+- `127.0.0.1:3000` (WhatsApp bridge — local only)
 
 ## 5. Scheduling strategy
 
@@ -237,12 +258,73 @@ FYI: ...
 | 4 | ✅ done | Telegram delivery + chat-id discovery + `/run-now` end-to-end. |
 | 5 | ✅ done | Gmail agent + summarizer. |
 | 6 | ⏳ next | YouTube agent (channel uploads + caption-only transcripts). |
-| 7 | ⏳ | Introduce `app/graph.py` (LangGraph parallel graph) + `langgraph.json` for Studio. |
-| 8 | ⏳ | launchd install instructions + `pmset` wake. |
+| 7 | ✅ done | `app/graph.py` (LangGraph parallel graph) + `langgraph.json` for Studio. |
+| 8 | ✅ done | launchd install + APScheduler backup trigger. |
 | 9 | ⏳ | `/history` HTML polish, run-history index page. |
 | 10 | ⏳ | README troubleshooting + Docker option. |
+| R1 | ✅ done | Reminders — `Reminder` model, full CRUD API (`/reminders`), mobile-friendly `/settings` UI. |
+| R2 | ✅ done | WhatsApp reply assistant — Node.js bridge integration, `whatsapp_agent` (AI suggestions), `PendingReply` model, Telegram inline-button approval flow (`wa_send` / `wa_edit` / `wa_skip`), `/pending` command, silence-alert watchdog. |
 
-## 11. Non-goals (for now)
+## 11. Reminders subsystem
+
+A lightweight web UI at `/settings` (mobile-friendly, Apple-style design) lets the user
+manage recurring reminders. The root `/` redirects here.
+
+**API surface** (all JSON):
+- `GET  /reminders` — list all reminders ordered by creation time.
+- `POST /reminders` — create a reminder (`label`, `frequency`, optional `day_of_week` /
+  `day_of_month` / `time` / `time_end`).
+- `PATCH /reminders/{id}` — toggle `enabled` on/off.
+- `DELETE /reminders/{id}` — remove a reminder.
+
+Frequencies: `daily | weekly | monthly`. The UI renders inline toggle switches and a
+trash-icon delete button per row, plus a toast for feedback.
+
+Reminders are stored in `reminders` (SQLite). Delivery into the morning brief is the
+intended next step (not yet wired into `compose_agent`).
+
+## 12. WhatsApp reply assistant
+
+An always-on second brain for WhatsApp DMs. Architecture:
+
+```
+WhatsApp Web ──► Node.js bridge (port 3000) ──► POST /whatsapp/incoming
+                       │                               │
+                       │ watchdog (silence > N hrs)    │ background task
+                       ▼                               ▼
+              POST /whatsapp/silence-alert    whatsapp_agent.suggest_reply()
+                       │                               │
+                       ▼                               ▼
+              Telegram alert             PendingReply row + Telegram notification
+                                                       │
+                                         inline buttons: ✅ Send / ✏️ Edit / ❌ Skip
+                                                       │
+                                         telegram_poller.py (daemon thread)
+                                                       │
+                                         send_whatsapp_message() → bridge → WA
+```
+
+**Flow**:
+1. Node.js bridge POSTs `{wa_from, contact_name, body, timestamp, message_id}` to
+   `/whatsapp/incoming`.
+2. Dedup on `wa_message_id` (idempotent).
+3. `whatsapp_agent.suggest_reply()` calls `gpt-4o-mini` to draft a reply.
+4. A `PendingReply` row is created (`status="pending"`).
+5. A Telegram notification is sent with the incoming message + AI suggestion +
+   three inline buttons.
+6. The `telegram_poller` long-polls `getUpdates` in a daemon thread:
+   - **✅ Send** (`wa_send:{id}`) → calls bridge, marks `sent`.
+   - **✏️ Edit** (`wa_edit:{id}`) → sends the suggestion as copyable text; user
+     replies to the notification with their edited version → bridge sends that.
+   - **❌ Skip** (`wa_skip:{id}`) → marks `dismissed`, removes buttons.
+   - `/pending` command → lists all unresolved items.
+7. Silence-alert watchdog POSTs to `/whatsapp/silence-alert` if the bridge goes
+   quiet for too long; the server forwards a Telegram warning.
+
+**Non-goals for this subsystem**: autonomous sending without approval, group messages,
+media attachments, multi-device.
+
+## 13. Non-goals (for now)
 
 - Multi-user. This is a single-user personal agent.
 - A custom visual workflow *builder*. (That was an earlier shape — we're

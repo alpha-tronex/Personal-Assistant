@@ -25,10 +25,15 @@ Steps 1–4 from the original build plan are **already done** (see
 | 1. Gmail agent | 2–4 | ✅ done (Week 4 = ongoing tuning) | Email summary added to the daily brief |
 | 2. YouTube agent | 5–7 | ⏳ next | Video TL;DRs added to the daily brief |
 | 3. Orchestration + scheduling | 8–9 | ✅ done | LangGraph parallel runs (+ Studio visual debugger) + 08:00 launchd job |
+| R1. Reminders | — | ✅ done | `/settings` UI + full CRUD API for recurring reminders |
+| R2. WhatsApp assistant | — | ✅ done | AI reply suggestions via Telegram inline buttons, approval loop |
 | 4. Polish (optional) | 10–12 | ⏳ | History UI, observability, docs, Dockerize |
 
 **Total realistic timeline: ~10 weeks to a fully-working daily brief, ~12 weeks with polish.**
 **Total effort: ~35–50 hours.**
+
+> Phases R1 and R2 were built outside the original plan and represent significant
+> scope expansion. They're tracked here for completeness.
 
 If you only have 3 hours in a given week, skip the "stretch" tasks and just
 hit the **must-do** ones — every week is structured that way.
@@ -310,6 +315,54 @@ Realistic completion targets:
 | 3 hrs/week minimum | Calendar + Gmail + YouTube working | Week 8 |
 | 4 hrs/week average | Fully scheduled, hands-off daily brief | Week 9 |
 | 5 hrs/week average | Polished v1 with history UI | Week 11 |
+
+---
+
+---
+
+## Phase R1 — Reminders  ✅ done
+
+Built outside the original milestone plan.
+
+**What was built**
+- `Reminder` ORM model (`reminders` table): `label`, `frequency` (daily/weekly/monthly),
+  `day_of_week`, `day_of_month`, `time`, `time_end`, `enabled`, `created_at`.
+- Full CRUD REST API in `main.py`: `GET/POST /reminders`, `PATCH /reminders/{id}`,
+  `DELETE /reminders/{id}`.
+- Mobile-friendly `/settings` HTML page (self-contained, no JS framework): toggle
+  switches to enable/disable, trash-icon delete, inline add form with frequency picker.
+- Root `/` redirects to `/settings`.
+
+**What remains**
+- [ ] Wire enabled reminders into `compose_agent` so they appear in the morning brief.
+- [ ] Reminder-specific Telegram alerts (fire at the reminder's configured time, not
+      only at 08:00 briefing time).
+
+---
+
+## Phase R2 — WhatsApp reply assistant  ✅ done
+
+Built outside the original milestone plan.
+
+**What was built**
+- Node.js bridge integration: `POST /whatsapp/incoming` (new DM) and
+  `POST /whatsapp/silence-alert` (watchdog).
+- `app/agents/whatsapp_agent.py`: calls `gpt-4o-mini` to draft a contextual reply.
+- `PendingReply` ORM model: tracks incoming message, AI suggestion, approval status,
+  and the Telegram `message_id` used for reply matching.
+- `app/tools/whatsapp.py`: HTTP client for `send_whatsapp_message()` to the bridge.
+- `app/tools/telegram.py` extended: `send_wa_notification()` with inline keyboard
+  (✅ Send / ✏️ Edit / ❌ Skip buttons), `answer_callback_query()`,
+  `edit_message_reply_markup()`.
+- `app/telegram_poller.py`: daemon thread long-polling `getUpdates`; handles button
+  taps (`wa_send`, `wa_edit`, `wa_skip`), reply-to-message approvals, and `/pending`
+  command.
+- Started at FastAPI lifespan alongside the scheduler.
+
+**What remains**
+- [ ] `/pending` UI: add a `/settings`-style web view of open pending replies.
+- [ ] Failure alarm test: confirm silence-alert fires correctly end-to-end.
+- [ ] Configurable silence threshold (`WHATSAPP_SILENCE_HOURS` env var).
 
 ---
 
