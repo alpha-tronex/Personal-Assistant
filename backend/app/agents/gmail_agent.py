@@ -16,7 +16,11 @@ from typing import Iterable
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from sqlalchemy import select
+
 from ..config import get_settings
+from ..db import session_scope
+from ..models import AppSetting
 from ..tools.gmail import GmailMessage, fetch_recent_messages
 
 logger = logging.getLogger(__name__)
@@ -86,8 +90,16 @@ def _llm_summarize(messages: list[GmailMessage]) -> str:
     return (resp.content or "").strip()
 
 
+def _gmail_enabled() -> bool:
+    with session_scope() as s:
+        row = s.get(AppSetting, "gmail_enabled")
+        return (row.value if row else "true") == "true"
+
+
 def summarize_gmail() -> str:
     """Return the Gmail section of the morning brief (markdown)."""
+    if not _gmail_enabled():
+        return ""
     try:
         messages = fetch_recent_messages()
     except Exception as e:  # noqa: BLE001

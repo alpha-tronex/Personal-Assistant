@@ -18,9 +18,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 
-from .config import get_settings
+import yaml
+
+from .config import BACKEND_ROOT, get_settings
 from .db import init_db, session_scope
-from .models import Brief, Reminder, Run
+from .models import AppSetting, Brief, Reminder, Run, YoutubeChannel
 from .routers.reauth import router as reauth_router
 from .routers.whatsapp import router as whatsapp_router
 from .scheduler import start_scheduler, stop_scheduler
@@ -31,6 +33,29 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _seed_defaults() -> None:
+    """Insert default app settings and migrate channels.yaml on first boot."""
+    with session_scope() as s:
+        # Feature flags — only insert if not already present
+        for key, default in [("gmail_enabled", "true"), ("youtube_enabled", "true")]:
+            if not s.get(AppSetting, key):
+                s.add(AppSetting(key=key, value=default))
+
+        # Migrate channels.yaml → youtube_channels table (one-time)
+        existing_count = s.execute(
+            select(YoutubeChannel)
+        ).scalars().first()
+        if existing_count is None:
+            channels_file = BACKEND_ROOT / "config" / "channels.yaml"
+            if channels_file.exists():
+                data = yaml.safe_load(channels_file.read_text()) or {}
+                for handle in data.get("channels") or []:
+                    handle = handle.strip()
+                    if handle:
+                        s.add(YoutubeChannel(handle=handle))
+                logger.info("Migrated channels.yaml → youtube_channels table.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.basicConfig(
@@ -38,6 +63,7 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     init_db()
+    _seed_defaults()
     start_scheduler()
     start_poller()
     logger.info("Agentic app started.")
@@ -194,6 +220,79 @@ def delete_reminder(reminder_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Feature flags — gmail / youtube on/off
+# ---------------------------------------------------------------------------
+
+@app.get("/settings/flags")
+def get_flags() -> JSONResponse:
+    with session_scope() as s:
+        rows = s.execute(select(AppSetting)).scalars().all()
+        flags = {r.key: r.value for r in rows}
+    return JSONResponse({
+        "gmail_enabled": flags.get("gmail_enabled", "true") == "true",
+        "youtube_enabled": flags.get("youtube_enabled", "true") == "true",
+    })
+
+
+class FlagPatch(BaseModel):
+    value: bool
+
+
+@app.patch("/settings/flags/{key}")
+def set_flag(key: str, body: FlagPatch) -> JSONResponse:
+    if key not in ("gmail_enabled", "youtube_enabled"):
+        raise HTTPException(422, "unknown flag")
+    with session_scope() as s:
+        row = s.get(AppSetting, key)
+        if row:
+            row.value = "true" if body.value else "false"
+        else:
+            s.add(AppSetting(key=key, value="true" if body.value else "false"))
+    return JSONResponse({"key": key, "value": body.value})
+
+
+# ---------------------------------------------------------------------------
+# YouTube channels CRUD
+# ---------------------------------------------------------------------------
+
+class ChannelIn(BaseModel):
+    handle: str
+
+
+@app.get("/channels")
+def list_channels() -> JSONResponse:
+    with session_scope() as s:
+        rows = s.execute(select(YoutubeChannel).order_by(YoutubeChannel.added_at)).scalars().all()
+        out = [{"id": r.id, "handle": r.handle, "added_at": r.added_at.isoformat()} for r in rows]
+    return JSONResponse(out)
+
+
+@app.post("/channels", status_code=201)
+def add_channel(body: ChannelIn) -> JSONResponse:
+    handle = body.handle.strip()
+    if not handle:
+        raise HTTPException(422, "handle must not be empty")
+    with session_scope() as s:
+        existing = s.execute(select(YoutubeChannel).where(YoutubeChannel.handle == handle)).scalar_one_or_none()
+        if existing:
+            raise HTTPException(409, "channel already exists")
+        ch = YoutubeChannel(handle=handle)
+        s.add(ch)
+        s.flush()
+        out = {"id": ch.id, "handle": ch.handle, "added_at": ch.added_at.isoformat()}
+    return JSONResponse(out, status_code=201)
+
+
+@app.delete("/channels/{channel_id}", status_code=204)
+def delete_channel(channel_id: int) -> None:
+    with session_scope() as s:
+        ch = s.get(YoutubeChannel, channel_id)
+        if not ch:
+            raise HTTPException(404, "channel not found")
+        s.delete(ch)
+
+
+# ---------------------------------------------------------------------------
 # Settings portal — mobile-friendly web UI
 # ---------------------------------------------------------------------------
 
@@ -242,6 +341,12 @@ _SETTINGS_HTML = """<!doctype html>
       border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.9rem;
       appearance: auto;
     }
+    .inline-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .inline-form input { flex: 1; padding: 0.55rem 0.75rem; border: 1px solid #ddd;
+                         border-radius: 8px; font-size: 0.95rem; }
+    .inline-form button { padding: 0.55rem 1rem; background: #007aff; color: #fff;
+                          border: none; border-radius: 8px; font-size: 0.9rem;
+                          font-weight: 600; cursor: pointer; white-space: nowrap; }
     .freq-row { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; }
     .freq-btn { flex: 1; padding: 0.5rem 0.25rem; border: 1.5px solid #ddd;
                 border-radius: 8px; background: #fff; cursor: pointer;
@@ -266,6 +371,43 @@ _SETTINGS_HTML = """<!doctype html>
 <div class="container">
   <h1>⚙️ Personal Assistant — Settings</h1>
 
+  <!-- ── Brief sections on/off ── -->
+  <h2>📬 Brief Sections</h2>
+  <div class="card">
+    <div class="row">
+      <div class="row-label">
+        <strong>📧 Email Brief</strong>
+        <small>Include Gmail summary in the morning brief</small>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="flag-gmail" onchange="setFlag('gmail_enabled', this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="row">
+      <div class="row-label">
+        <strong>📺 YouTube Brief</strong>
+        <small>Include YouTube video TL;DRs in the morning brief</small>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="flag-youtube" onchange="setFlag('youtube_enabled', this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- ── YouTube Channels ── -->
+  <h2>📺 YouTube Channels</h2>
+  <div class="card" id="channels-list"></div>
+  <div class="form-card" style="margin-bottom:1rem;">
+    <label>Add Channel</label>
+    <div class="inline-form">
+      <input id="ch-handle" type="text" placeholder="@channelhandle or UCxxxx…">
+      <button onclick="addChannel()">Add</button>
+    </div>
+  </div>
+
+  <!-- ── Recurring Reminders ── -->
   <h2>🔁 Recurring Reminders</h2>
   <div class="card" id="list"></div>
 
@@ -308,6 +450,63 @@ _SETTINGS_HTML = """<!doctype html>
 <div class="toast" id="toast"></div>
 
 <script>
+  // ── Flags ──────────────────────────────────────────────────────────────────
+  async function loadFlags() {
+    const res = await fetch('/settings/flags');
+    const data = await res.json();
+    document.getElementById('flag-gmail').checked = data.gmail_enabled;
+    document.getElementById('flag-youtube').checked = data.youtube_enabled;
+  }
+
+  async function setFlag(key, value) {
+    await fetch('/settings/flags/' + key, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value}),
+    });
+    showToast(value ? 'Enabled ✓' : 'Disabled');
+  }
+
+  // ── YouTube Channels ───────────────────────────────────────────────────────
+  async function loadChannels() {
+    const res = await fetch('/channels');
+    const data = await res.json();
+    const el = document.getElementById('channels-list');
+    if (!data.length) {
+      el.innerHTML = '<p class="empty">No channels yet — add one below.</p>';
+      return;
+    }
+    el.innerHTML = data.map(c => `
+      <div class="row" id="ch-${c.id}">
+        <div class="row-label">
+          <strong>${esc(c.handle)}</strong>
+        </div>
+        <button class="btn-del" onclick="delChannel(${c.id})" title="Remove">🗑</button>
+      </div>`).join('');
+  }
+
+  async function addChannel() {
+    const handle = document.getElementById('ch-handle').value.trim();
+    if (!handle) { showToast('Enter a channel handle.'); return; }
+    const res = await fetch('/channels', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({handle}),
+    });
+    if (res.status === 409) { showToast('Channel already added.'); return; }
+    document.getElementById('ch-handle').value = '';
+    showToast('Channel added ✓');
+    loadChannels();
+  }
+
+  async function delChannel(id) {
+    if (!confirm('Remove this channel?')) return;
+    await fetch('/channels/' + id, {method: 'DELETE'});
+    showToast('Removed');
+    loadChannels();
+  }
+
+  // ── Reminders ─────────────────────────────────────────────────────────────
   let freq = 'daily';
 
   function setFreq(f) {
@@ -352,7 +551,7 @@ _SETTINGS_HTML = """<!doctype html>
         </div>
         <label class="toggle" title="${r.enabled ? 'Enabled' : 'Disabled'}">
           <input type="checkbox" ${r.enabled ? 'checked' : ''}
-                 onchange="toggle(${r.id}, this.checked)">
+                 onchange="toggleReminder(${r.id}, this.checked)">
           <span class="slider"></span>
         </label>
         <button class="btn-del" onclick="del(${r.id})" title="Delete">🗑</button>
@@ -386,8 +585,8 @@ _SETTINGS_HTML = """<!doctype html>
     load();
   }
 
-  async function toggle(id, enabled) {
-    await fetch(`/reminders/${id}`, {
+  async function toggleReminder(id, enabled) {
+    await fetch('/reminders/' + id, {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({enabled}),
@@ -397,11 +596,12 @@ _SETTINGS_HTML = """<!doctype html>
 
   async function del(id) {
     if (!confirm('Delete this reminder?')) return;
-    await fetch(`/reminders/${id}`, {method: 'DELETE'});
+    await fetch('/reminders/' + id, {method: 'DELETE'});
     showToast('Deleted');
     load();
   }
 
+  // ── Toast ──────────────────────────────────────────────────────────────────
   let _toastTimer;
   function showToast(msg) {
     const t = document.getElementById('toast');
@@ -411,6 +611,9 @@ _SETTINGS_HTML = """<!doctype html>
     _toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
   }
 
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadFlags();
+  loadChannels();
   load();
 </script>
 </body>

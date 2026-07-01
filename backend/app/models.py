@@ -69,6 +69,26 @@ class PendingReply(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class AppSetting(Base):
+    """Key/value store for runtime feature flags and admin toggles."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class YoutubeChannel(Base):
+    """YouTube channels to include in the morning brief."""
+
+    __tablename__ = "youtube_channels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    handle: Mapped[str] = mapped_column(String(255), unique=True)   # e.g. "@fireship" or "UCxxxx"
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SeenItem(Base):
     """Dedup table so we don't re-summarize a video / email twice."""
 

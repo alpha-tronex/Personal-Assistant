@@ -1,22 +1,22 @@
 """YouTube agent.
 
-For each channel in config/channels.yaml, fetches new uploads since yesterday
-midnight, summarises each with gpt-4o-mini (TL;DR + 3 bullets + skip-if),
-and deduplicates via seen_items so the same video is never summarised twice.
+Channels are loaded from the youtube_channels DB table (managed via /settings).
+On first boot, channels.yaml is migrated into the table automatically.
+Fetches new uploads since yesterday midnight, summarises each with gpt-4o-mini
+(TL;DR + 3 bullets + skip-if), and deduplicates via seen_items.
 """
 
 from __future__ import annotations
 
 import logging
 
-import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from sqlalchemy import select
 
-from ..config import BACKEND_ROOT, get_settings
+from ..config import get_settings
 from ..db import session_scope
-from ..models import SeenItem
+from ..models import AppSetting, SeenItem, YoutubeChannel
 from ..tools.youtube import YouTubeVideo, fetch_new_videos
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,16 @@ Summarise now.\
 """
 
 
+def _youtube_enabled() -> bool:
+    with session_scope() as s:
+        row = s.get(AppSetting, "youtube_enabled")
+        return (row.value if row else "true") == "true"
+
+
 def _load_channels() -> list[str]:
-    channels_file = BACKEND_ROOT / "config" / "channels.yaml"
-    if not channels_file.exists():
-        return []
-    data = yaml.safe_load(channels_file.read_text()) or {}
-    return [c for c in (data.get("channels") or []) if c]
+    with session_scope() as s:
+        rows = s.execute(select(YoutubeChannel)).scalars().all()
+        return [r.handle for r in rows]
 
 
 def _is_seen(video_id: str) -> bool:
@@ -105,11 +109,13 @@ def _summarize_video(video: YouTubeVideo) -> str:
 
 def summarize_youtube_uploads() -> str:
     """Return the YouTube section of the morning brief (markdown)."""
+    if not _youtube_enabled():
+        return ""
     channels = _load_channels()
     if not channels:
         return (
             "📺 *NEW VIDEOS*\n"
-            "_(No channels configured — add handles to config/channels.yaml)_"
+            "_(No channels configured — add handles via /settings)_"
         )
 
     try:
