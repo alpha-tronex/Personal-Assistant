@@ -23,7 +23,7 @@ Steps 1–4 from the original build plan are **already done** (see
 |------|-------|--------|---------|
 | 0. Personal setup (you only) | 1 | ✅ done | OAuth + Telegram working, calendar brief arrives daily |
 | 1. Gmail agent | 2–4 | ✅ done (Week 4 = ongoing tuning) | Email summary added to the daily brief |
-| 2. YouTube agent | 5–7 | ⏳ next | Video TL;DRs added to the daily brief |
+| 2. YouTube agent | 5–7 | ✅ done | Video TL;DRs added to the daily brief |
 | 3. Orchestration + scheduling | 8–9 | ✅ done | LangGraph parallel runs (+ Studio visual debugger) + 08:00 launchd job |
 | R1. Reminders | — | ✅ done | `/settings` UI + full CRUD API for recurring reminders |
 | R2. WhatsApp assistant | — | ✅ done | AI reply suggestions via Telegram inline buttons, approval loop |

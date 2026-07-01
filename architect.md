@@ -257,7 +257,7 @@ FYI: ...
 | 3 | ✅ done | Calendar agent (today's events as markdown). |
 | 4 | ✅ done | Telegram delivery + chat-id discovery + `/run-now` end-to-end. |
 | 5 | ✅ done | Gmail agent + summarizer. |
-| 6 | ⏳ next | YouTube agent (channel uploads + caption-only transcripts). |
+| 6 | ✅ done | YouTube agent (channel uploads + caption-only transcripts). |
 | 7 | ✅ done | `app/graph.py` (LangGraph parallel graph) + `langgraph.json` for Studio. |
 | 8 | ✅ done | launchd install + APScheduler backup trigger. |
 | 9 | ⏳ | `/history` HTML polish, run-history index page. |
