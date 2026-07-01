@@ -304,66 +304,83 @@ _SETTINGS_HTML = """<!doctype html>
   <title>Personal Assistant — Settings</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0d0d0d;
+      --surface: #1a1a1a;
+      --border:  #2a2a2a;
+      --text:    #e5e5e5;
+      --muted:   #888;
+      --label:   #aaa;
+      --accent:  #0a84ff;
+      --green:   #30d158;
+      --red:     #ff453a;
+      --input-bg:#111;
+    }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: #f5f5f7; color: #1d1d1f; }
+           background: var(--bg); color: var(--text); }
     .container { max-width: 600px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; }
-    h2 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: #555; }
-    .card { background: #fff; border-radius: 12px; padding: 0.25rem 1rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; color: #fff; }
+    h2 { font-size: 0.78rem; font-weight: 600; margin: 1.5rem 0 0.5rem;
+         color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 0.25rem 1rem; margin-bottom: 1rem; }
     .row { display: flex; align-items: center; gap: 0.75rem;
-           padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; }
+           padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
     .row:last-child { border-bottom: none; }
     .row-label { flex: 1; }
-    .row-label strong { display: block; font-size: 0.95rem; }
-    .row-label small { color: #888; font-size: 0.78rem; }
+    .row-label strong { display: block; font-size: 0.95rem; color: var(--text); }
+    .row-label small { color: var(--muted); font-size: 0.78rem; }
     /* toggle switch */
     .toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
     .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
     .slider { position: absolute; cursor: pointer; inset: 0;
-              background: #ccc; border-radius: 26px; transition: .2s; }
+              background: #3a3a3a; border-radius: 26px; transition: .2s; }
     .slider::before { content: ""; position: absolute; width: 20px; height: 20px;
                       left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
-    input:checked + .slider { background: #34c759; }
+    input:checked + .slider { background: var(--green); }
     input:checked + .slider::before { transform: translateX(18px); }
     .btn-del { background: none; border: none; font-size: 1.1rem;
-               cursor: pointer; color: #ff3b30; padding: 0.2rem 0.1rem; }
+               cursor: pointer; color: var(--red); padding: 0.2rem 0.1rem; }
     /* form */
-    .form-card { background: #fff; border-radius: 12px; padding: 1rem;
-                 box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .form-card { background: var(--surface); border: 1px solid var(--border);
+                 border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
     .form-card label { display: block; font-size: 0.82rem; font-weight: 600;
-                       color: #555; margin-bottom: 0.25rem; }
+                       color: var(--label); margin-bottom: 0.25rem; }
     .form-card input[type=text],
     .form-card input[type=time],
     .form-card input[type=number],
     .form-card select {
-      width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #ddd;
-      border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.9rem;
-      appearance: auto;
+      width: 100%; padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.95rem; margin-bottom: 0.9rem;
+      background: var(--input-bg); color: var(--text);
+      appearance: auto; color-scheme: dark;
     }
     .inline-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-    .inline-form input { flex: 1; padding: 0.55rem 0.75rem; border: 1px solid #ddd;
-                         border-radius: 8px; font-size: 0.95rem; }
-    .inline-form button { padding: 0.55rem 1rem; background: #007aff; color: #fff;
+    .inline-form input { flex: 1; padding: 0.55rem 0.75rem;
+                         border: 1px solid var(--border); border-radius: 8px;
+                         font-size: 0.95rem; background: var(--input-bg); color: var(--text); }
+    .inline-form button { padding: 0.55rem 1rem; background: var(--accent); color: #fff;
                           border: none; border-radius: 8px; font-size: 0.9rem;
                           font-weight: 600; cursor: pointer; white-space: nowrap; }
     .freq-row { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; }
-    .freq-btn { flex: 1; padding: 0.5rem 0.25rem; border: 1.5px solid #ddd;
-                border-radius: 8px; background: #fff; cursor: pointer;
-                font-size: 0.82rem; font-weight: 500; transition: .15s; }
-    .freq-btn.active { background: #007aff; color: #fff; border-color: #007aff; }
+    .freq-btn { flex: 1; padding: 0.5rem 0.25rem; border: 1.5px solid var(--border);
+                border-radius: 8px; background: var(--input-bg); color: var(--muted);
+                cursor: pointer; font-size: 0.82rem; font-weight: 500; transition: .15s; }
+    .freq-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .conditional { display: none; }
     .conditional.show { display: block; }
-    .btn-add { width: 100%; padding: 0.75rem; background: #007aff; color: #fff;
+    .btn-add { width: 100%; padding: 0.75rem; background: var(--accent); color: #fff;
                border: none; border-radius: 10px; font-size: 1rem;
                font-weight: 600; cursor: pointer; margin-top: 0.25rem; }
     .btn-add:active { opacity: 0.8; }
-    .empty { color: #aaa; font-size: 0.88rem; text-align: center;
+    .empty { color: var(--muted); font-size: 0.88rem; text-align: center;
              padding: 1.25rem 0; }
     .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
-             background: #323232; color: #fff; padding: 0.6rem 1.2rem;
+             background: #2a2a2a; color: #fff; padding: 0.6rem 1.2rem;
              border-radius: 20px; font-size: 0.88rem; opacity: 0;
-             transition: opacity .3s; pointer-events: none; }
+             transition: opacity .3s; pointer-events: none;
+             border: 1px solid var(--border); }
     .toast.show { opacity: 1; }
   </style>
 </head>
