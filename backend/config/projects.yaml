@@ -1,0 +1,68 @@
+# Status data for the /projects dashboard.
+# Edit this file whenever a project's status changes — the "done"/"todo"
+# bullets are curated by hand (repo docs are too inconsistent to auto-parse
+# reliably). "repos" are used to fetch live last-commit info from GitHub.
+
+projects:
+  - name: FAIS
+    tagline: Case management / affidavit system rewrite (Node/Express + Angular)
+    repos:
+      - alpha-tronex/FAIS
+    done:
+      - Full rewrite of the legacy .NET Web Forms app; role-based case/user management
+      - AI-assisted document intake for affidavits (classification, pdf-parse, REST API)
+      - Child support worksheet calculator with income entry UI
+      - AI Query admin page (n8n/MCP automation); extensive architecture/RAG docs
+    todo:
+      - OCR / rasterization for scanned documents (explicitly not yet done)
+      - Finish in-progress worksheet states and document intake re-analysis flow
+      - Affidavit navigation polish (most recent commits are mid-stream UI work)
+
+  - name: Personal Assistant
+    tagline: Morning briefing agent + reminders + WhatsApp assistant (this app)
+    repos:
+      - alpha-tronex/Personal-Assistant
+    done:
+      - Morning brief pipeline (Calendar -> Gmail -> YouTube -> Telegram) via LangGraph
+      - Reminders subsystem (CRUD API + settings UI, recurring daily/weekly/monthly)
+      - WhatsApp AI-reply assistant with Telegram approval flow
+      - Hetzner deployment (Docker, nginx, Let's Encrypt) documented in hetzner.md
+    todo:
+      - Reminder-specific Telegram alerts at their own time (not just in the daily brief)
+      - WhatsApp /pending web UI
+      - Configurable WHATSAPP_SILENCE_HOURS + confirm end-to-end silence-alert test
+      - Gmail prompt tightening
+
+  - name: LMS
+    tagline: Course/assessment platform (Angular + Node/Express/Mongo) — active successor to quizzes
+    repos:
+      - alpha-tronex/LMS
+    done:
+      - Rebrand of the quizzes codebase (Quiz -> Assessment, with legacy fallback)
+      - Instructor permissioning (restricted to assigned courses), delete-course flow
+      - In-progress/complete course tracking, end-of-course survey MVP
+    todo:
+      - Instructor-permission edge cases (active as of most recent commit)
+
+  - name: quizzes
+    tagline: Original quiz app (Angular + Node/Express/Mongo) — superseded by LMS
+    repos:
+      - alpha-tronex/quizzes
+    done:
+      - Full quiz-taking app shipped (builder, auth, history, mobile nav fixes)
+    todo:
+      - Dormant since Feb 2026; functionality continues under LMS, no further work planned here
+
+  - name: Language Translator
+    tagline: Expo/React Native speech translator app + Next.js backend
+    repos:
+      - alpha-tronex/language-translator
+      - alpha-tronex/api
+    done:
+      - Full record -> transcribe (Whisper) -> translate (GPT-4o-mini) -> speak (TTS) pipeline
+      - 6+ languages incl. Japanese/Korean, Arabic RTL support, tablet layout
+      - Store listing copy and privacy policy drafted
+    todo:
+      - EAS/TestFlight build (Phase 4)
+      - Google Play internal testing
+      - Store compliance prep — screenshots, keywords, legal (Phase 5)

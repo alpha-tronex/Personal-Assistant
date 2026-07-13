@@ -24,6 +24,7 @@ import yaml
 from .config import BACKEND_ROOT, get_settings
 from .db import init_db, session_scope
 from .models import AppSetting, Brief, Reminder, Run, YoutubeChannel
+from .routers.projects import router as projects_router
 from .routers.reauth import router as reauth_router
 from .routers.whatsapp import router as whatsapp_router
 from .scheduler import start_scheduler, stop_scheduler
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Personal Assistant — Morning Brief", lifespan=lifespan)
 app.include_router(whatsapp_router)
 app.include_router(reauth_router)
+app.include_router(projects_router)
 
 
 @app.get("/favicon.svg", include_in_schema=False)
@@ -394,6 +396,7 @@ _SETTINGS_HTML = """<!doctype html>
 <body>
 <div class="container">
   <h1>⚙️ Personal Assistant — Settings</h1>
+  <p><a href="/projects" style="color:var(--accent);">📊 View projects dashboard →</a></p>
 
   <!-- ── Brief sections on/off ── -->
   <h2>📬 Brief Sections</h2>
