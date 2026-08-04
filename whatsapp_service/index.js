@@ -34,10 +34,18 @@ const qrcode = require('qrcode-terminal');
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const FASTAPI_URL   = process.env.FASTAPI_URL   || 'http://127.0.0.1:8000';
 const PORT          = parseInt(process.env.BRIDGE_PORT || '3000', 10);
 const AUTH_DIR      = process.env.AUTH_DIR       || './auth';
+const PROXY_URL     = process.env.PROXY_URL      || null;
+
+// Routes the WhatsApp WebSocket through a residential proxy. Needed because
+// WhatsApp started hard-rejecting connections from the Hetzner box's IP
+// (repeated "Connection closed. Code: 405" on every attempt, even with a
+// fresh, unauthenticated session) — a datacenter-IP block, not a session issue.
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : undefined;
 
 const SILENCE_THRESHOLD_MS    = 6 * 60 * 60 * 1000;  // alert after 6 h quiet
 const SILENCE_COOLDOWN_MS     = 4 * 60 * 60 * 1000;  // re-alert at most every 4 h
@@ -153,11 +161,13 @@ async function connectToWhatsApp() {
     const { version }          = await fetchLatestBaileysVersion();
 
     console.log(`📡 Using WA version ${version.join('.')}`);
+    console.log(proxyAgent ? '🌐 Routing via residential proxy.' : '🌐 Connecting directly (no proxy).');
 
     sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
+        agent: proxyAgent,
         // Avoid stale-message fetch errors on reconnect
         getMessage: async () => ({ conversation: '' }),
     });
