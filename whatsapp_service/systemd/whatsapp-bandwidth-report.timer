@@ -1,0 +1,13 @@
+# Fires whatsapp-bandwidth-report.service once, ~3 days after being
+# enabled, then does not repeat (one-time check-in requested by the user,
+# not an ongoing monitor). Safe to delete after it fires -- see
+# `systemctl disable --now whatsapp-bandwidth-report.timer` if you want
+# to clean it up once the report lands.
+
+[Timer]
+OnActiveSec=3d
+Persistent=true
+Unit=whatsapp-bandwidth-report.service
+
+[Install]
+WantedBy=timers.target

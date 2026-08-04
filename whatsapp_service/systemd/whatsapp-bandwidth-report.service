@@ -1,0 +1,16 @@
+# One-time bandwidth report for the WhatsApp bridge, to size real IPRoyal
+# proxy cost. See /opt/whatsapp-bridge/bandwidth-report.sh and
+# hetzner-infra/hetzner.md, "WhatsApp bridge -- residential proxy".
+#
+# Triggered by whatsapp-bandwidth-report.timer (fires once, ~3 days after
+# nethogs started). Runs as root because the nethogs log requires root to
+# read, and Telegram creds live in a root-only file.
+
+[Unit]
+Description=Report WhatsApp bridge bandwidth usage (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/whatsapp-bridge/bandwidth-report.sh
