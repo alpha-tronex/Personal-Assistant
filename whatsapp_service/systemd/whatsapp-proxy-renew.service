@@ -1,0 +1,16 @@
+# Renews the IPRoyal residential-proxy sticky session for the WhatsApp
+# bridge before it expires (IPRoyal's max sticky lifetime is 7 days).
+# See hetzner-infra/hetzner.md, "WhatsApp bridge -- residential proxy",
+# and /opt/whatsapp-bridge/renew-proxy.sh for the full explanation.
+#
+# Triggered by whatsapp-proxy-renew.timer. Runs as root because the
+# whatsapp-bridge pm2 process is owned by root.
+
+[Unit]
+Description=Renew WhatsApp bridge residential-proxy session (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/whatsapp-bridge/renew-proxy.sh

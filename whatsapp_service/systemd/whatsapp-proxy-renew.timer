@@ -1,0 +1,20 @@
+# Fires whatsapp-proxy-renew.service every 6 days -- one day inside
+# IPRoyal's 7-day max sticky-session lifetime, so the proxy session is
+# always renewed before it can expire on its own and drop the bridge
+# back into WhatsApp's IP block.
+#
+# OnActiveSec (not OnBootSec): the current session was just set up by
+# hand, so the first automated renewal should be ~6 days from when this
+# timer is enabled, not immediately on the next boot.
+#
+# Persistent=true: if the box is off when a renewal was due, run it
+# shortly after boot instead of waiting a full 6 days for the next slot.
+
+[Timer]
+OnActiveSec=6d
+OnUnitActiveSec=6d
+Persistent=true
+Unit=whatsapp-proxy-renew.service
+
+[Install]
+WantedBy=timers.target
