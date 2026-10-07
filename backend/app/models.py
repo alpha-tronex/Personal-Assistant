@@ -86,6 +86,7 @@ class YoutubeChannel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     handle: Mapped[str] = mapped_column(String(255), unique=True)   # e.g. "@fireship" or "UCxxxx"
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

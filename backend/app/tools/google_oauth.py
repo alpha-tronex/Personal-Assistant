@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # All scopes we will ever ask for, in one consent screen.
 DEFAULT_SCOPES: tuple[str, ...] = (
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar",  # read + write (events, reminders)
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/youtube.readonly",
 )

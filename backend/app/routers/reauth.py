@@ -92,7 +92,6 @@ def reauth_start(secret: str = Query(...)):
     auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",   # force refresh_token to be returned
-        include_granted_scopes="true",
         code_challenge=code_challenge,
         code_challenge_method="S256",
     )

@@ -271,7 +271,22 @@ class ChannelIn(BaseModel):
 def list_channels() -> JSONResponse:
     with session_scope() as s:
         rows = s.execute(select(YoutubeChannel).order_by(YoutubeChannel.added_at)).scalars().all()
-        out = [{"id": r.id, "handle": r.handle, "added_at": r.added_at.isoformat()} for r in rows]
+        out = [{"id": r.id, "handle": r.handle, "enabled": r.enabled, "added_at": r.added_at.isoformat()} for r in rows]
+    return JSONResponse(out)
+
+
+class ChannelPatch(BaseModel):
+    enabled: bool
+
+
+@app.patch("/channels/{channel_id}")
+def patch_channel(channel_id: int, body: ChannelPatch) -> JSONResponse:
+    with session_scope() as s:
+        ch = s.get(YoutubeChannel, channel_id)
+        if not ch:
+            raise HTTPException(404, "channel not found")
+        ch.enabled = body.enabled
+        out = {"id": ch.id, "handle": ch.handle, "enabled": ch.enabled}
     return JSONResponse(out)
 
 
@@ -312,167 +327,250 @@ _SETTINGS_HTML = """<!doctype html>
   <title>Personal Assistant — Settings</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #0d0d0d;
-      --surface: #1a1a1a;
-      --border:  #2a2a2a;
-      --text:    #e5e5e5;
-      --muted:   #888;
-      --label:   #aaa;
-      --accent:  #0a84ff;
-      --green:   #30d158;
-      --red:     #ff453a;
-      --input-bg:#111;
+      --bg:#0d0d0d; --surface:#161616; --border:#252525; --border2:#2e2e2e;
+      --text:#e5e5e5; --muted:#666; --label:#999;
+      --accent:#0a84ff; --green:#30d158; --red:#ff453a; --yellow:#ffd60a;
+      --input-bg:#0d0d0d;
     }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: var(--bg); color: var(--text); }
-    .container { max-width: 600px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.5rem; color: #fff; }
-    h2 { font-size: 0.78rem; font-weight: 600; margin: 1.5rem 0 0.5rem;
-         color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
-    .card { background: var(--surface); border: 1px solid var(--border);
-            border-radius: 12px; padding: 0.25rem 1rem; margin-bottom: 1rem; }
-    .row { display: flex; align-items: center; gap: 0.75rem;
-           padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      border-bottom: 1px solid var(--border); padding: 1rem 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .topbar h1 { font-size: 1.1rem; font-weight: 700; }
+    .topbar .projects-link {
+      margin-left: auto; color: var(--accent); font-size: 0.82rem;
+      text-decoration: none; white-space: nowrap;
+    }
+    .topbar .projects-link:hover { text-decoration: underline; }
+
+    /* ── Main layout ── */
+    .content { max-width: 1080px; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+    @media (max-width: 700px) {
+      .content { padding: 1rem; }
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* ── Section headers ── */
+    .section-header {
+      font-size: 0.72rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin: 1.75rem 0 0.6rem;
+    }
+    .section-header:first-of-type { margin-top: 0; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 14px; overflow: hidden; margin-bottom: 0.75rem;
+    }
+    .row {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border);
+    }
     .row:last-child { border-bottom: none; }
-    .row-label { flex: 1; }
-    .row-label strong { display: block; font-size: 0.95rem; color: var(--text); }
-    .row-label small { color: var(--muted); font-size: 0.78rem; }
-    /* toggle switch */
+    .row-label { flex: 1; min-width: 0; }
+    .row-label strong { display: block; font-size: 0.9rem; color: var(--text); }
+    .row-label small { color: var(--muted); font-size: 0.76rem; }
+
+    /* ── Toggle switch ── */
     .toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
     .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-    .slider { position: absolute; cursor: pointer; inset: 0;
-              background: #3a3a3a; border-radius: 26px; transition: .2s; }
-    .slider::before { content: ""; position: absolute; width: 20px; height: 20px;
-                      left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: var(--border2); border-radius: 26px; transition: .2s;
+    }
+    .slider::before {
+      content: ""; position: absolute; width: 20px; height: 20px;
+      left: 3px; top: 3px; background: #aaa; border-radius: 50%; transition: .2s;
+    }
     input:checked + .slider { background: var(--green); }
-    input:checked + .slider::before { transform: translateX(18px); }
-    .btn-del { background: none; border: none; font-size: 1.1rem;
-               cursor: pointer; color: var(--red); padding: 0.2rem 0.1rem; }
-    /* form */
-    .form-card { background: var(--surface); border: 1px solid var(--border);
-                 border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
-    .form-card label { display: block; font-size: 0.82rem; font-weight: 600;
-                       color: var(--label); margin-bottom: 0.25rem; }
+    input:checked + .slider::before { background: #fff; transform: translateX(18px); }
+
+    /* ── Icon buttons ── */
+    .btn-del {
+      background: none; border: none; font-size: 1rem;
+      cursor: pointer; color: var(--muted); padding: 0.2rem 0.3rem;
+      border-radius: 6px; transition: color .15s;
+    }
+    .btn-del:hover { color: var(--red); }
+
+    /* ── Form card ── */
+    .form-card {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 14px; padding: 1.1rem 1.1rem 1rem; margin-bottom: 0.75rem;
+    }
+    .form-card label {
+      display: block; font-size: 0.75rem; font-weight: 600;
+      color: var(--label); margin-bottom: 0.3rem; letter-spacing: .02em;
+    }
     .form-card input[type=text],
     .form-card input[type=time],
     .form-card input[type=number],
     .form-card select {
       width: 100%; padding: 0.55rem 0.75rem;
-      border: 1px solid var(--border); border-radius: 8px;
-      font-size: 0.95rem; margin-bottom: 0.9rem;
+      border: 1px solid var(--border2); border-radius: 8px;
+      font-size: 0.9rem; margin-bottom: 0.85rem;
       background: var(--input-bg); color: var(--text);
       appearance: auto; color-scheme: dark;
     }
-    .inline-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-    .inline-form input { flex: 1; padding: 0.55rem 0.75rem;
-                         border: 1px solid var(--border); border-radius: 8px;
-                         font-size: 0.95rem; background: var(--input-bg); color: var(--text); }
-    .inline-form button { padding: 0.55rem 1rem; background: var(--accent); color: #fff;
-                          border: none; border-radius: 8px; font-size: 0.9rem;
-                          font-weight: 600; cursor: pointer; white-space: nowrap; }
-    .freq-row { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; }
-    .freq-btn { flex: 1; padding: 0.5rem 0.25rem; border: 1.5px solid var(--border);
-                border-radius: 8px; background: var(--input-bg); color: var(--muted);
-                cursor: pointer; font-size: 0.82rem; font-weight: 500; transition: .15s; }
+    .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .time-row label { margin-bottom: 0.3rem; }
+    .time-row input { margin-bottom: 0; }
+
+    /* inline add-channel row */
+    .inline-form { display: flex; gap: 0.5rem; }
+    .inline-form input {
+      flex: 1; padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border2); border-radius: 8px;
+      font-size: 0.9rem; background: var(--input-bg); color: var(--text);
+    }
+    .inline-form button {
+      padding: 0.55rem 1rem; background: var(--accent); color: #fff;
+      border: none; border-radius: 8px; font-size: 0.85rem;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+
+    /* frequency pills */
+    .freq-row { display: flex; gap: 0.5rem; margin-bottom: 0.85rem; }
+    .freq-btn {
+      flex: 1; padding: 0.48rem 0.25rem; border: 1px solid var(--border2);
+      border-radius: 8px; background: var(--input-bg); color: var(--muted);
+      cursor: pointer; font-size: 0.82rem; font-weight: 500; transition: .15s;
+    }
     .freq-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
     .conditional { display: none; }
     .conditional.show { display: block; }
-    .btn-add { width: 100%; padding: 0.75rem; background: var(--accent); color: #fff;
-               border: none; border-radius: 10px; font-size: 1rem;
-               font-weight: 600; cursor: pointer; margin-top: 0.25rem; }
+
+    /* add button */
+    .btn-add {
+      width: 100%; padding: 0.7rem; background: var(--accent); color: #fff;
+      border: none; border-radius: 10px; font-size: 0.95rem;
+      font-weight: 600; cursor: pointer; margin-top: 0.1rem;
+    }
     .btn-add:active { opacity: 0.8; }
-    .empty { color: var(--muted); font-size: 0.88rem; text-align: center;
-             padding: 1.25rem 0; }
-    .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
-             background: #2a2a2a; color: #fff; padding: 0.6rem 1.2rem;
-             border-radius: 20px; font-size: 0.88rem; opacity: 0;
-             transition: opacity .3s; pointer-events: none;
-             border: 1px solid var(--border); }
+
+    .empty { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 1.2rem 0; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: #2a2a2a; color: #fff; padding: 0.6rem 1.2rem;
+      border-radius: 20px; font-size: 0.85rem; opacity: 0;
+      transition: opacity .3s; pointer-events: none; border: 1px solid var(--border2);
+      white-space: nowrap;
+    }
     .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>⚙️ Personal Assistant — Settings</h1>
-  <p><a href="/projects" style="color:var(--accent);">📊 View projects dashboard →</a></p>
 
-  <!-- ── Brief sections on/off ── -->
-  <h2>📬 Brief Sections</h2>
-  <div class="card">
-    <div class="row">
-      <div class="row-label">
-        <strong>📧 Email Brief</strong>
-        <small>Include Gmail summary in the morning brief</small>
+<div class="topbar">
+  <h1>⚙️ Settings</h1>
+  <a class="projects-link" href="/projects">📊 Projects dashboard →</a>
+</div>
+
+<div class="content">
+  <div class="two-col">
+
+    <!-- ══ LEFT COLUMN ══ -->
+    <div>
+      <!-- ── Brief Sections ── -->
+      <div class="section-header">📬 Brief Sections</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-label">
+            <strong>📧 Email Brief</strong>
+            <small>Include Gmail summary in the morning brief</small>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="flag-gmail" onchange="setFlag('gmail_enabled', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div class="row-label">
+            <strong>📺 YouTube Brief</strong>
+            <small>Include YouTube video TL;DRs in the morning brief</small>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="flag-youtube" onchange="setFlag('youtube_enabled', this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="flag-gmail" onchange="setFlag('gmail_enabled', this.checked)">
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="row">
-      <div class="row-label">
-        <strong>📺 YouTube Brief</strong>
-        <small>Include YouTube video TL;DRs in the morning brief</small>
+
+      <!-- ── YouTube Channels ── -->
+      <div class="section-header">📺 YouTube Channels</div>
+      <div class="card" id="channels-list"></div>
+      <div class="form-card">
+        <label>Add Channel</label>
+        <div class="inline-form">
+          <input id="ch-handle" type="text" placeholder="@handle or UCxxxx…">
+          <button onclick="addChannel()">Add</button>
+        </div>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="flag-youtube" onchange="setFlag('youtube_enabled', this.checked)">
-        <span class="slider"></span>
-      </label>
-    </div>
-  </div>
-
-  <!-- ── YouTube Channels ── -->
-  <h2>📺 YouTube Channels</h2>
-  <div class="card" id="channels-list"></div>
-  <div class="form-card" style="margin-bottom:1rem;">
-    <label>Add Channel</label>
-    <div class="inline-form">
-      <input id="ch-handle" type="text" placeholder="@channelhandle or UCxxxx…">
-      <button onclick="addChannel()">Add</button>
-    </div>
-  </div>
-
-  <!-- ── Recurring Reminders ── -->
-  <h2>🔁 Recurring Reminders</h2>
-  <div class="card" id="list"></div>
-
-  <h2>Add Reminder</h2>
-  <div class="form-card">
-    <label>Label</label>
-    <input id="f-label" type="text" placeholder="e.g. Review finances">
-
-    <label>Frequency</label>
-    <div class="freq-row">
-      <button class="freq-btn active" data-f="daily"   onclick="setFreq('daily')">Daily</button>
-      <button class="freq-btn"        data-f="weekly"  onclick="setFreq('weekly')">Weekly</button>
-      <button class="freq-btn"        data-f="monthly" onclick="setFreq('monthly')">Monthly</button>
     </div>
 
-    <div id="opt-weekly" class="conditional">
-      <label>Day of week</label>
-      <select id="f-dow">
-        <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
-        <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
-        <option value="friday">Friday</option><option value="saturday">Saturday</option>
-        <option value="sunday">Sunday</option>
-      </select>
+    <!-- ══ RIGHT COLUMN ══ -->
+    <div>
+      <!-- ── Recurring Reminders ── -->
+      <div class="section-header">🔁 Recurring Reminders</div>
+      <div class="card" id="list"></div>
+
+      <!-- ── Add Reminder ── -->
+      <div class="section-header">➕ Add Reminder</div>
+      <div class="form-card">
+        <label>Label</label>
+        <input id="f-label" type="text" placeholder="e.g. Review finances">
+
+        <label>Frequency</label>
+        <div class="freq-row">
+          <button class="freq-btn active" data-f="daily"   onclick="setFreq('daily')">Daily</button>
+          <button class="freq-btn"        data-f="weekly"  onclick="setFreq('weekly')">Weekly</button>
+          <button class="freq-btn"        data-f="monthly" onclick="setFreq('monthly')">Monthly</button>
+        </div>
+
+        <div id="opt-weekly" class="conditional">
+          <label>Day of week</label>
+          <select id="f-dow">
+            <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+            <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
+            <option value="friday">Friday</option><option value="saturday">Saturday</option>
+            <option value="sunday">Sunday</option>
+          </select>
+        </div>
+
+        <div id="opt-monthly" class="conditional">
+          <label>Day of month</label>
+          <input id="f-dom" type="number" min="1" max="31" placeholder="1 – 31">
+        </div>
+
+        <div class="time-row">
+          <div>
+            <label>Start Time (optional)</label>
+            <input id="f-time" type="time">
+          </div>
+          <div>
+            <label>End Time (optional)</label>
+            <input id="f-time-end" type="time">
+          </div>
+        </div>
+
+        <button class="btn-add" onclick="addReminder()">Add Reminder</button>
+      </div>
     </div>
 
-    <div id="opt-monthly" class="conditional">
-      <label>Day of month</label>
-      <input id="f-dom" type="number" min="1" max="31" placeholder="1 – 31">
-    </div>
-
-    <label>Start Time (optional)</label>
-    <input id="f-time" type="time">
-
-    <label>End Time (optional)</label>
-    <input id="f-time-end" type="time">
-
-    <button class="btn-add" onclick="addReminder()">Add Reminder</button>
-  </div>
+  </div><!-- /.two-col -->
 </div>
 <div class="toast" id="toast"></div>
 
@@ -506,10 +604,25 @@ _SETTINGS_HTML = """<!doctype html>
     el.innerHTML = data.map(c => `
       <div class="row" id="ch-${c.id}">
         <div class="row-label">
-          <strong>${esc(c.handle)}</strong>
+          <strong style="${c.enabled ? '' : 'opacity:0.45'}">${esc(c.handle)}</strong>
         </div>
+        <label class="toggle" title="${c.enabled ? 'Pause channel' : 'Resume channel'}">
+          <input type="checkbox" ${c.enabled ? 'checked' : ''}
+                 onchange="toggleChannel(${c.id}, this.checked)">
+          <span class="slider"></span>
+        </label>
         <button class="btn-del" onclick="delChannel(${c.id})" title="Remove">🗑</button>
       </div>`).join('');
+  }
+
+  async function toggleChannel(id, enabled) {
+    await fetch('/channels/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled}),
+    });
+    showToast(enabled ? 'Channel resumed ✓' : 'Channel paused');
+    loadChannels();
   }
 
   async function addChannel() {
