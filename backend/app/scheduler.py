@@ -1,9 +1,10 @@
 """APScheduler — runs the morning brief daily at the configured local time.
 
-In production we recommend ALSO installing the launchd job
-(see launchd/com.personalassistant.morning.plist) which can wake the process
-even if the FastAPI server isn't running. This in-process scheduler is the
-"already running" fallback.
+In production (the always-on Docker container on the Hetzner box) this is the
+only trigger. For local development on a Mac, the launchd job
+(see launchd/com.personalassistant.morning.plist) can also fire the brief
+when the FastAPI server isn't running; this scheduler then only matters if
+the server happens to be up at brief time.
 """
 
 from __future__ import annotations
