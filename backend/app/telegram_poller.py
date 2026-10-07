@@ -28,13 +28,12 @@ import time
 from datetime import datetime
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from .config import get_settings
 from .db import session_scope
 from .models import PendingReply
 from .tools.telegram import (
-    TelegramError,
     answer_callback_query,
     edit_message_reply_markup,
 )

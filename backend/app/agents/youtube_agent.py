@@ -53,7 +53,9 @@ def _youtube_enabled() -> bool:
 
 def _load_channels() -> list[str]:
     with session_scope() as s:
-        rows = s.execute(select(YoutubeChannel)).scalars().all()
+        rows = s.execute(
+            select(YoutubeChannel).where(YoutubeChannel.enabled.is_(True))
+        ).scalars().all()
         return [r.handle for r in rows]
 
 

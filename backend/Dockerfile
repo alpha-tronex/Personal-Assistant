@@ -18,6 +18,10 @@ COPY config/ ./config/
 # Data directory (mounted as volume in production)
 RUN mkdir -p /app/data
 
+# Commit this image was built from; reported by /healthz (see config.git_sha).
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

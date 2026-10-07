@@ -9,6 +9,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import html
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -95,7 +96,7 @@ def root() -> RedirectResponse:
 
 @app.get("/healthz")
 def healthz() -> dict[str, str | datetime]:
-    return {"status": "ok", "now": datetime.utcnow()}
+    return {"status": "ok", "now": datetime.utcnow(), "version": settings.git_sha}
 
 
 @app.post("/run-now")
@@ -132,7 +133,11 @@ def history_one(run_id: int) -> HTMLResponse:
         brief = s.execute(
             select(Brief).where(Brief.run_id == run_id).order_by(desc(Brief.created_at)).limit(1)
         ).scalar_one_or_none()
-    body = brief.body_markdown if brief else "(no brief was produced for this run)"
+        # Read everything before the session commits — committed instances are
+        # expired and can't be refreshed once detached.
+        body = brief.body_markdown if brief else "(no brief was produced for this run)"
+        status, trigger = run.status, run.trigger
+        started_at, finished_at = run.started_at, run.finished_at
     return HTMLResponse(
         f"""<!doctype html>
 <html><head><title>Brief #{run_id}</title>
@@ -140,9 +145,9 @@ def history_one(run_id: int) -> HTMLResponse:
 pre{{white-space:pre-wrap;background:#f6f8fa;padding:1rem;border-radius:8px;}}</style>
 </head><body>
 <h1>Brief #{run_id}</h1>
-<p><b>Status:</b> {run.status} &nbsp; <b>Trigger:</b> {run.trigger}</p>
-<p><b>Started:</b> {run.started_at} &nbsp; <b>Finished:</b> {run.finished_at}</p>
-<pre>{body}</pre>
+<p><b>Status:</b> {status} &nbsp; <b>Trigger:</b> {trigger}</p>
+<p><b>Started:</b> {started_at} &nbsp; <b>Finished:</b> {finished_at}</p>
+<pre>{html.escape(body)}</pre>
 </body></html>"""
     )
 

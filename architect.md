@@ -243,6 +243,22 @@ Estimated cost: **$0.05–0.20 / day**.
 - Every run is rowed in `runs` with `status` ∈ {`running`, `ok`, `error`}
   and the full traceback in `runs.error`.
 
+## 8a. Testing & deployment
+
+- **Tests:** `backend/tests/`, pytest, about 145 tests, hermetic: no network,
+  no real `.env`, and a fresh SQLite database per test. Each layer mocks only
+  the layer below it (tools → agents → graph/workflow → routes). The layer
+  table and the rules are in `backend/tests/README.md`.
+- **Audit:** `backend/scripts/testability-audit.sh`. Hard rules fail CI:
+  `ChatOpenAI` only in agents, Google clients only in tools, no `os.environ`,
+  tests never start the lifespan. Advisory rules list known debt: raw httpx in
+  the poller and projects router, hidden clocks, import-time settings.
+- **CI/CD:** `.github/workflows/ci.yml` runs checks on every push and PR. On
+  `main`, once checks pass, it deploys to the Hetzner box through a
+  forced-command SSH key and smoke-tests that `/healthz` reports the pushed
+  SHA. Details and rollback are in `backend/deploy/README.md`. The WhatsApp
+  bridge is still deployed by hand.
+
 ## 9. Delivery format
 
 A single Telegram message (split if > ~4000 chars) using **MarkdownV2**.

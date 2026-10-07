@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     app_brief_hour: int = Field(default=8, alias="APP_BRIEF_HOUR")
     app_brief_minute: int = Field(default=0, alias="APP_BRIEF_MINUTE")
 
+    # Commit the running image was built from (baked in by deploy.sh via the
+    # Dockerfile's GIT_SHA build arg). The CD smoke test compares it to the
+    # pushed commit, so a deploy that silently kept the old container fails.
+    git_sha: str = Field(default="dev", alias="GIT_SHA")
+
     def resolve_path(self, value: str) -> Path:
         """Resolve a possibly-relative path against the backend root."""
         p = Path(value)

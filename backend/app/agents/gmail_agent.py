@@ -16,7 +16,6 @@ from typing import Iterable
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from sqlalchemy import select
 
 from ..config import get_settings
 from ..db import session_scope

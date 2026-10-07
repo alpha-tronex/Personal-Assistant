@@ -1,0 +1,113 @@
+name: CI / CD
+
+# Checks run on every push and pull request. Production (the
+# personal-assistant container on the Hetzner box) is only updated from main,
+# and only after every check passes. See backend/deploy/README.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Superseded PR runs are cancelled; main runs never are (the deploy job also
+  # has its own non-cancelling group).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"   # matches the Dockerfile
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        if: ${{ !cancelled() }}
+        run: ruff check .
+
+      - name: Tests (pytest)
+        if: ${{ !cancelled() }}
+        run: pytest
+
+      - name: Testability audit
+        if: ${{ !cancelled() }}
+        run: bash scripts/testability-audit.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Shell scripts (shellcheck)
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: shellcheck --severity=warning backend/scripts/*.sh backend/deploy/*.sh whatsapp_service/systemd/*.sh
+
+      - uses: actions/setup-node@v7
+        if: ${{ !cancelled() }}
+        with:
+          node-version: 22
+
+      - name: WhatsApp bridge syntax (deployed by hand, not by this workflow)
+        if: ${{ !cancelled() }}
+        working-directory: whatsapp_service
+        run: node --check index.js
+
+  deploy:
+    name: Deploy to Hetzner
+    needs: checks
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Check required secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error::Missing required secret DEPLOY_SSH_KEY — add it under repo Settings → Secrets and variables → Actions (see backend/deploy/README.md)."
+            exit 1
+          fi
+
+      - name: Deploy (runs /opt/assistant/deploy.sh via a forced-command key)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          # Raw OpenSSH private key text, pasted as-is — no base64 round-trip.
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Static IP, no DNS: fetch the host key fresh rather than pinning it
+          # through a second copy-pasted secret. Never StrictHostKeyChecking=no.
+          ssh-keyscan -t ed25519 5.161.104.5 >> ~/.ssh/known_hosts
+          # The key's forced command runs deploy.sh; no remote command is passed.
+          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts alphathiam@5.161.104.5
+
+      - name: Smoke test production
+        run: |
+          expected="${GITHUB_SHA::7}"
+          for _ in $(seq 1 12); do
+            body=$(curl -fsS https://assistant.alphatronex.com/healthz || true)
+            if echo "$body" | grep -q "\"version\":\"${expected}\""; then
+              echo "Smoke test passed: https://assistant.alphatronex.com is serving ${expected}" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Smoke test failed — /healthz did not report version ${expected} within 60s (last response: ${body:-none})"
+          exit 1
