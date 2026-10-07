@@ -10,6 +10,12 @@ covering:
 
 The brief is delivered as a **Telegram DM**.
 
+Production runs as the `personal-assistant` Docker container on the shared
+Hetzner VPS (assistant.alphatronex.com), alongside the host-level WhatsApp
+bridge (§12). Box topology, ports, volumes and ops runbooks live in
+`hetzner-infra/hetzner.md`; this repo can still run locally on a Mac for
+development.
+
 This document is the source of truth for *how it's built*. The user-facing
 setup walkthrough lives in `backend/README.md`.
 
@@ -19,7 +25,7 @@ setup walkthrough lives in `backend/README.md`.
 
 ```
                  ┌────────────────────┐
-                 │   launchd (08:00)  │   macOS scheduled job
+                 │ manual / launchd   │   optional (local dev only)
                  └─────────┬──────────┘
                            │ POST /run-now (or direct python entrypoint)
                            ▼
@@ -27,7 +33,7 @@ setup walkthrough lives in `backend/README.md`.
    │  FastAPI (uvicorn)  —  backend/app/main.py                 │
    │    /healthz   /run-now   /history   /history/{id}          │
    │                                                            │
-   │  APScheduler (in-process backup trigger @ 08:00)           │
+   │  APScheduler (in-process 08:00 trigger — prod primary)     │
    └─────────────────────────┬──────────────────────────────────┘
                              │ run_morning_brief(trigger)
                              ▼
@@ -121,25 +127,37 @@ for approval. Status flows: `pending → sent | dismissed`.
   The poller also uses the bot token for long-polling (`getUpdates`) and
   answering inline keyboard callbacks (`answerCallbackQuery`).
 - **WhatsApp bridge**: A local Node.js process (port 3000) that bridges
-  WhatsApp Web to this FastAPI server. No external credential needed beyond
-  the QR-code scan that authenticates the WhatsApp session.
+  WhatsApp Web to this FastAPI server, authenticated by a QR-code scan. On
+  the Hetzner box it reaches WhatsApp through an IPRoyal residential proxy
+  (`PROXY_URL`), because WhatsApp blocks the datacenter IP. The proxy
+  session is renewed by a systemd timer in `whatsapp_service/systemd/`; ops
+  details live in `hetzner-infra/hetzner.md`.
 
-All secrets stay on the local Mac. `data/` is `.gitignore`d. Outbound traffic
+All secrets stay on the host running the app — in production the Hetzner
+box (`/opt/assistant/.env`, `/opt/assistant/data/` mounted into the
+container; locally, `backend/.env` and `backend/data/`). `data/` is
+`.gitignore`d. Outbound traffic
 is limited to:
 - `googleapis.com` (Calendar, Gmail, YouTube Data, OAuth refresh)
 - `api.telegram.org` (delivery + long-poll)
 - `api.openai.com` (summarization)
-- `127.0.0.1:3000` (WhatsApp bridge — local only)
+- WhatsApp bridge on port 3000 — never public (`127.0.0.1:3000` locally,
+  `172.17.0.1:3000` from the container to the host in production)
+- `geo.iproyal.com:12321` (bridge → residential proxy → WhatsApp, server only)
 
 ## 5. Scheduling strategy
 
-We run **two** triggers, by design:
+**Production (Hetzner, Docker):** the container runs 24/7, so the
+in-process **APScheduler** job in `app/scheduler.py` is the only trigger.
+launchd does not exist there. `/run-now` stays available for manual runs.
+
+**Local Mac (development):** two triggers, by design:
 
 1. **launchd** (`launchd/com.personalassistant.morning.plist`) — the source of
    truth. Fires at 08:00 even if the FastAPI server isn't already running:
    it tries `curl POST /run-now` and falls back to invoking the Python
    workflow directly via `.venv/bin/python -c "from app.workflow import ..."`.
-2. **APScheduler** in `app/scheduler.py` — a no-op in production, but useful
+2. **APScheduler** in `app/scheduler.py` — locally just a backup, useful
    if you happen to be running the server at 08:00 anyway and don't want to
    bother with launchd. It will *not* double-fire because launchd hits
    `/run-now`, which is just another way to call the same function (each run
@@ -331,4 +349,3 @@ media attachments, multi-device.
   shipping the focused use case instead. LangGraph Studio gives us a
   read-mostly visual debugger for free; see §6a.)
 - Pushing data anywhere except Telegram and the local SQLite DB.
-- Hosted deployment. Local Mac only — `host = local` per the build spec.

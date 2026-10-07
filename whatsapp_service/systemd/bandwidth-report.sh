@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# One-time bandwidth report for the WhatsApp bridge, ~3 days after nethogs
-# started logging (2026-08-04). Sums nethogs -t's per-60s KB/s samples for
+# One-time bandwidth report for the WhatsApp bridge, ~7 days after
+# whatsapp-nethogs.service started logging. Sums nethogs -t's per-60s KB/s samples for
 # the bridge process, extrapolates to a monthly figure, and estimates what
 # that costs on IPRoyal's $1.75/GB rotating-proxy pricing -- the whole
 # reason nethogs was installed (see hetzner-infra/hetzner.md, "WhatsApp
@@ -12,13 +12,17 @@
 # (proxy renewal every 6 days, plus any manual restarts) and nethogs
 # tracks each restart under a new PID.
 #
-# Triggered once by whatsapp-bandwidth-report.timer (OnActiveSec=3d, no
+# nethogs only emits a row for intervals with traffic, so idle minutes are
+# missing and the monthly extrapolation errs high -- fine for a "is this
+# cheap?" check.
+#
+# Triggered once by whatsapp-bandwidth-report.timer (OnActiveSec=7d, no
 # repeat). Reports to the same Telegram bot/chat as proxy renewal.
 
 set -uo pipefail
 
 ENV_FILE="/opt/whatsapp-bridge/proxy-renew.env"
-NETHOGS_LOG="/tmp/nethogs-wa.log"
+NETHOGS_LOG="/var/log/nethogs-wa.log"
 REFRESH_SEC=60
 
 # shellcheck disable=SC1090
@@ -32,7 +36,7 @@ notify() {
 }
 
 if [ ! -f "$NETHOGS_LOG" ]; then
-    notify "⚠️ WhatsApp bandwidth report: ${NETHOGS_LOG} doesn't exist -- nethogs may have stopped or been removed. No usage data available."
+    notify "⚠️ WhatsApp bandwidth report: ${NETHOGS_LOG} doesn't exist -- check systemctl status whatsapp-nethogs. No usage data available."
     exit 1
 fi
 

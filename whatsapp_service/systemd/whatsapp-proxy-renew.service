@@ -3,8 +3,9 @@
 # See hetzner-infra/hetzner.md, "WhatsApp bridge -- residential proxy",
 # and /opt/whatsapp-bridge/renew-proxy.sh for the full explanation.
 #
-# Triggered by whatsapp-proxy-renew.timer. Runs as root because the
-# whatsapp-bridge pm2 process is owned by root.
+# Triggered by whatsapp-proxy-renew.timer. Runs as root only to read the
+# root-only proxy-renew.env; the script drives alphathiam's pm2 (which owns
+# the bridge) via runuser, never root's.
 
 [Unit]
 Description=Renew WhatsApp bridge residential-proxy session (one-shot)

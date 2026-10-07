@@ -1,11 +1,12 @@
-# Fires whatsapp-bandwidth-report.service once, ~3 days after being
-# enabled, then does not repeat (one-time check-in requested by the user,
-# not an ongoing monitor). Safe to delete after it fires -- see
-# `systemctl disable --now whatsapp-bandwidth-report.timer` if you want
-# to clean it up once the report lands.
+# Fires whatsapp-bandwidth-report.service once, ~7 days after being
+# enabled, then does not repeat (one-time check-in, not an ongoing
+# monitor). Re-armed 2026-10: the Sep 2026 reboot re-fired it after the
+# original /tmp nethogs log was gone, so it failed with no data.
+# Safe to clean up once the report lands:
+# `systemctl disable --now whatsapp-bandwidth-report.timer`.
 
 [Timer]
-OnActiveSec=3d
+OnActiveSec=7d
 Persistent=true
 Unit=whatsapp-bandwidth-report.service
 

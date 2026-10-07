@@ -2,8 +2,8 @@
 # proxy cost. See /opt/whatsapp-bridge/bandwidth-report.sh and
 # hetzner-infra/hetzner.md, "WhatsApp bridge -- residential proxy".
 #
-# Triggered by whatsapp-bandwidth-report.timer (fires once, ~3 days after
-# nethogs started). Runs as root because the nethogs log requires root to
+# Triggered by whatsapp-bandwidth-report.timer (fires once, ~7 days after
+# being enabled). Data comes from whatsapp-nethogs.service. Runs as root because the nethogs log requires root to
 # read, and Telegram creds live in a root-only file.
 
 [Unit]
