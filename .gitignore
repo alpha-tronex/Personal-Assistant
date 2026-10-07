@@ -26,3 +26,6 @@ backend/data/*
 .vscode/
 .idea/
 *.swp
+
+# LangGraph Studio local dev-server state (`langgraph dev`)
+.langgraph_api/
