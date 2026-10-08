@@ -7,8 +7,10 @@
  *   - On connect: forwards all new incoming DMs to FastAPI POST /whatsapp/incoming.
  *   - Exposes POST /send so FastAPI can send approved replies back to WhatsApp.
  *   - Exposes GET /healthz and GET /stats for monitoring.
- *   - Watchdog: alerts via FastAPI if no message is received for 6+ daytime hours.
- *   - Auto-reconnects on dropped connection; exits on logout (so Docker restarts it).
+ *   - Watchdog: alerts via FastAPI if no message is received for 6+ daytime hours,
+ *     and if the connection has been down 10+ minutes (see lib/outage.js).
+ *   - Auto-reconnects on dropped connection; exits (so pm2 restarts it) on logout
+ *     or when a reconnect isn't open within 90 s.
  *
  * Ports:
  *   - This bridge listens on :3000
@@ -35,6 +37,7 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const outage = require('./lib/outage');
 
 const FASTAPI_URL   = process.env.FASTAPI_URL   || 'http://127.0.0.1:8000';
 const PORT          = parseInt(process.env.BRIDGE_PORT || '3000', 10);
@@ -68,6 +71,8 @@ let sock           = null;
 let isConnected    = false;
 let lastMessageAt  = Date.now();
 let lastAlertAt    = 0;
+let connectTimer   = null;
+const outageStore  = outage.createStore();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,6 +119,20 @@ async function forwardToFastAPI(payload) {
     }
 }
 
+async function sendDisconnectedAlert({ minutes, recovered }) {
+    try {
+        await axios.post(
+            `${FASTAPI_URL}/whatsapp/disconnected-alert`,
+            { disconnected_for_minutes: minutes, recovered },
+            { timeout: 8_000 },
+        );
+        return true;
+    } catch (err) {
+        console.error('⚠️  Could not send disconnected alert:', err.message);
+        return false;
+    }
+}
+
 async function sendSilenceAlert(silentMs) {
     const hours = (silentMs / 3_600_000).toFixed(1);
     try {
@@ -135,9 +154,20 @@ async function sendSilenceAlert(silentMs) {
 
 function startWatchdog() {
     const timer = setInterval(async () => {
-        if (!isConnected) return; // reconnect logic handles this
+        const now = Date.now();
 
-        const now       = Date.now();
+        if (!isConnected) {
+            const since = outageStore.outageSince;
+            if (outage.shouldAlert({ now, outageSince: since, lastAlertAt: outageStore.lastAlertAt })) {
+                const minutes = Math.round((now - since) / 60_000);
+                if (await sendDisconnectedAlert({ minutes, recovered: false })) {
+                    outageStore.markAlerted(now);
+                    console.warn(`⚠️  Disconnected alert sent — down ${minutes} min.`);
+                }
+            }
+            return;
+        }
+
         const hour      = new Date().getHours();
         const daytime   = hour >= DAYTIME_START && hour < DAYTIME_END;
         const silentMs  = now - lastMessageAt;
@@ -156,6 +186,15 @@ function startWatchdog() {
 // ---------------------------------------------------------------------------
 
 async function connectToWhatsApp() {
+    // Until 'open' we count as down; keeps the original start across restarts.
+    outageStore.markDown(Date.now());
+    clearTimeout(connectTimer);
+    connectTimer = setTimeout(() => {
+        if (isConnected) return;
+        console.error(`❌ Not connected ${outage.CONNECT_TIMEOUT_MS / 1000}s after starting to connect — exiting so pm2 restarts with a fresh socket.`);
+        process.exit(1);
+    }, outage.CONNECT_TIMEOUT_MS);
+
     fs.mkdirSync(AUTH_DIR, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version }          = await fetchLatestBaileysVersion();
@@ -187,8 +226,11 @@ async function connectToWhatsApp() {
 
         if (connection === 'close') {
             isConnected = false;
+            outageStore.markDown(Date.now());
             const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
             console.warn(`⚠️  Connection closed. Code: ${code}`);
+            // Detach this socket's handlers so the replacement doesn't stack on them.
+            sock.ev.removeAllListeners();
 
             if (code === DisconnectReason.loggedOut) {
                 console.error('❌ Logged out — re-auth required. Exiting so Docker can restart.');
@@ -200,8 +242,13 @@ async function connectToWhatsApp() {
         } else if (connection === 'open') {
             isConnected    = true;
             lastMessageAt  = Date.now();
+            clearTimeout(connectTimer);
+            const since = outageStore.outageSince;
+            if (outage.owesRecoveryNotice({ outageSince: since, lastAlertAt: outageStore.lastAlertAt })) {
+                await sendDisconnectedAlert({ minutes: Math.round((Date.now() - since) / 60_000), recovered: true });
+            }
+            outageStore.clear();
             console.log('✅ WhatsApp connected and ready.');
-            startWatchdog();
         }
     });
 
@@ -287,6 +334,8 @@ app.listen(PORT, '0.0.0.0', () => {
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
+
+startWatchdog();
 
 connectToWhatsApp().catch(err => {
     console.error('Fatal error:', err);

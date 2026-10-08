@@ -54,6 +54,32 @@ def whatsapp_silence_alert(payload: WASilenceAlert):
     return {"status": "alerted"}
 
 
+class WADisconnected(BaseModel):
+    disconnected_for_minutes: int
+    recovered: bool = False
+
+
+@router.post("/whatsapp/disconnected-alert", status_code=202)
+def whatsapp_disconnected_alert(payload: WADisconnected):
+    """Called by the bridge when its WhatsApp connection stays down (and once it recovers)."""
+    minutes = payload.disconnected_for_minutes
+    if payload.recovered:
+        text = f"✅ WhatsApp bridge reconnected after about {minutes} min. New messages are flowing again."
+    else:
+        logger.warning("WhatsApp bridge disconnected for %d minutes.", minutes)
+        text = (
+            f"⚠️ WhatsApp bridge has been disconnected for {minutes} min — new WhatsApp "
+            f"messages aren't reaching Telegram.\n\nIt restarts itself every 90 s while "
+            f"down. If this keeps repeating: ssh hetzner, then pm2 logs whatsapp-bridge "
+            f"(proxy/IP issue → sudo systemctl start whatsapp-proxy-renew; logged out → re-scan the QR)."
+        )
+    try:
+        send_telegram_message(text)
+    except TelegramError as e:
+        logger.error("Failed to send disconnected alert via Telegram: %s", e)
+    return {"status": "alerted"}
+
+
 @router.post("/whatsapp/incoming", status_code=202)
 def whatsapp_incoming(payload: WAIncoming, background_tasks: BackgroundTasks):
     """Receive a new WhatsApp DM from the Node.js bridge."""

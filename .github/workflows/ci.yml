@@ -60,10 +60,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: WhatsApp bridge syntax (deployed by hand, not by this workflow)
+      - name: WhatsApp bridge syntax + tests (deployed by hand, not by this workflow)
         if: ${{ !cancelled() }}
         working-directory: whatsapp_service
-        run: node --check index.js
+        run: |
+          node --check index.js
+          npm test
 
   deploy:
     name: Deploy to Hetzner

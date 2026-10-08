@@ -95,6 +95,7 @@ def test_run_now_in_the_demo_never_starts_the_real_pipeline(visitor, monkeypatch
     ("method", "path"),
     [("GET", "/reauth?secret=x"), ("GET", "/reauth/callback?code=c&state=s"),
      ("POST", "/whatsapp/incoming"), ("POST", "/whatsapp/silence-alert"),
+     ("POST", "/whatsapp/disconnected-alert"),
      ("PATCH", "/projects/FAIS")],
 )
 def test_credential_bridge_and_project_edit_routes_are_off(visitor, method, path):

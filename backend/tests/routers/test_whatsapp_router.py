@@ -64,3 +64,28 @@ def test_silence_alert_forwards_to_telegram(client, monkeypatch):
     monkeypatch.setattr(wa, "send_telegram_message", sent.append)
     r = client.post("/whatsapp/silence-alert", json={"silent_for_hours": 6.5})
     assert r.status_code == 202 and "6.5 hours" in sent[0]
+
+
+def test_disconnected_alert_tells_you_messages_are_not_arriving(client, monkeypatch):
+    sent = []
+    monkeypatch.setattr(wa, "send_telegram_message", sent.append)
+    r = client.post("/whatsapp/disconnected-alert", json={"disconnected_for_minutes": 12})
+    assert r.status_code == 202
+    assert "disconnected for 12 min" in sent[0] and "aren't reaching Telegram" in sent[0]
+
+
+def test_recovered_notice(client, monkeypatch):
+    sent = []
+    monkeypatch.setattr(wa, "send_telegram_message", sent.append)
+    client.post("/whatsapp/disconnected-alert", json={"disconnected_for_minutes": 40, "recovered": True})
+    assert sent == ["✅ WhatsApp bridge reconnected after about 40 min. New messages are flowing again."]
+
+
+def test_disconnected_alert_survives_telegram_being_down(client, monkeypatch):
+    from app.tools.telegram import TelegramError
+
+    def down(text):
+        raise TelegramError("down")
+
+    monkeypatch.setattr(wa, "send_telegram_message", down)
+    assert client.post("/whatsapp/disconnected-alert", json={"disconnected_for_minutes": 15}).status_code == 202

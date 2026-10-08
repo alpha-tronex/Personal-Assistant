@@ -57,6 +57,7 @@ def test_every_route_except_the_allow_list_requires_login(anon_client):
     assert open_routes == {
         "/healthz", "/favicon.svg", "/login", "/logout",
         "/reauth", "/reauth/callback", "/whatsapp/incoming", "/whatsapp/silence-alert",
+        "/whatsapp/disconnected-alert",
     }
 
 
