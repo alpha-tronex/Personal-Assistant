@@ -27,14 +27,18 @@ fi
 docker compose -f docker-compose.prod.yml up -d
 docker image prune -f
 
+# Both the real app (:8000) and the public demo (:8001) must report the new SHA.
+healthy() {
+  curl -fsS "http://127.0.0.1:$1/healthz" | grep -q "\"version\":\"${GIT_SHA}\""
+}
 for _ in $(seq 1 12); do
-  if curl -fsS http://127.0.0.1:8000/healthz | grep -q "\"version\":\"${GIT_SHA}\""; then
-    echo "Deploy healthy at ${GIT_SHA}."
+  if healthy 8000 && healthy 8001; then
+    echo "Deploy healthy at ${GIT_SHA} (app + demo)."
     exit 0
   fi
   sleep 5
 done
 
-echo "health check failed: /healthz never reported version ${GIT_SHA}" >&2
+echo "health check failed: /healthz on :8000 and :8001 never both reported version ${GIT_SHA}" >&2
 docker compose -f docker-compose.prod.yml logs --tail 50
 exit 1

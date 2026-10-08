@@ -267,6 +267,23 @@ Estimated cost: **$0.05–0.20 / day**.
   SHA. Details and rollback are in `backend/deploy/README.md`. The WhatsApp
   bridge is still deployed by hand.
 
+## 8b. Public demo (demo.alphatronex.com)
+
+A second container runs the same image with `DEMO_MODE=true` (`app/demo.py`):
+
+- **Isolation:** no `.env` and no data volume, so it has no credentials at all.
+  Its SQLite file lives inside the container and is reset to the sample set on
+  startup, nightly at 03:00, and on every deploy.
+- **No login:** the guard middleware instead returns 404 for the routes that
+  could touch real credentials or shared state: `/reauth*`, `/whatsapp/*` and
+  project edits.
+- **No integrations:** the Telegram poller doesn't start and the 08:00 brief
+  isn't scheduled. `POST /run-now` and the banner's "Generate a sample brief"
+  build a brief from canned sections plus the demo's reminders, and send
+  nothing.
+- **Shared GitHub limit:** the projects dashboard caches GitHub lookups for 10
+  minutes, because both containers share the box's anonymous GitHub API quota.
+
 ## 9. Delivery format
 
 A single Telegram message (split if > ~4000 chars) using **MarkdownV2**.

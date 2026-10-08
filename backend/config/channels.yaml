@@ -1,10 +1,9 @@
 # YouTube channels the morning brief should check for new uploads.
 # Use the channel handle (with the leading @) or the raw channel ID (UCxxxx...).
+# Only read on first boot (copied into the youtube_channels table); after
+# that, manage channels from /settings. Production keeps its own copy in
+# /opt/assistant/config/.
 channels:
-  - "@JantaKaReporter"
-  - "@buffalobills"
-  - "@bayyinah"
-  - "@BillsNews"
-  - "@FRANCE24"
-  - "@Firstpost"
-  - "@breakingpoints"
+  - "@Fireship"
+  - "@veritasium"
+  - "@3blue1brown"

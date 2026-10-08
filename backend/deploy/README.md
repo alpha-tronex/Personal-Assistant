@@ -24,7 +24,12 @@ On the server, `/opt/assistant/deploy.sh` (the source is `deploy/deploy.sh` here
 1. `git reset --hard origin/main` in `/opt/assistant/repo`.
 2. Builds the image with `GIT_SHA` baked in.
 3. Swaps the container with `docker compose -f backend/docker-compose.prod.yml up -d`.
-4. Waits for `/healthz` to report the new SHA.
+4. Waits for `/healthz` on both the app (:8000) and the public demo
+   (:8001, the `personal-assistant-demo` service) to report the new SHA.
+
+The demo container gets no `.env` and no volume (see `app/demo.py`). Its
+nginx site is `hetzner-infra/nginx/demo.alphatronex.com`, and CI smoke-tests
+it too.
 
 State lives outside the checkout, in `/opt/assistant/`, and the compose file
 mounts it: `.env` (secrets, including the login's `ADMIN_PASSWORD_HASH` /

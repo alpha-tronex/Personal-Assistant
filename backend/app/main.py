@@ -24,6 +24,7 @@ import yaml
 
 from .config import BACKEND_ROOT, get_settings
 from .db import init_db, session_scope
+from .demo import generate_sample_brief, reset_demo_data, with_banner
 from .models import AppSetting, Brief, Reminder, Run, YoutubeChannel
 from .routers.login import require_login
 from .routers.login import router as login_router
@@ -61,17 +62,26 @@ def _seed_defaults() -> None:
                 logger.info("Migrated channels.yaml → youtube_channels table.")
 
 
+def start_background_jobs() -> None:
+    """DB setup plus the long-running jobs; the demo gets sample data and no poller."""
+    init_db()
+    if settings.demo_mode:
+        reset_demo_data()
+        start_scheduler()  # demo: nightly reset only, never the real brief
+        return
+    _seed_defaults()
+    start_scheduler()
+    start_poller()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.basicConfig(
         level=settings.app_log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    init_db()
-    _seed_defaults()
-    start_scheduler()
-    start_poller()
-    logger.info("Agentic app started.")
+    start_background_jobs()
+    logger.info("Agentic app started%s.", " in DEMO mode" if settings.demo_mode else "")
     try:
         yield
     finally:
@@ -106,8 +116,19 @@ def healthz() -> dict[str, str | datetime]:
 @app.post("/run-now")
 def run_now(background_tasks: BackgroundTasks) -> dict[str, str]:
     """Kick off a morning brief immediately. Returns immediately; work runs in background."""
+    if settings.demo_mode:
+        run_id = generate_sample_brief()
+        return {"status": "done", "message": f"Demo: sample brief saved as /history/{run_id} (nothing sent)."}
     background_tasks.add_task(run_morning_brief, "manual")
     return {"status": "scheduled", "message": "Brief is being generated in the background."}
+
+
+@app.post("/demo/brief", include_in_schema=False)
+def demo_brief() -> RedirectResponse:
+    """Demo banner button: build a sample brief and show it. Demo mode only."""
+    if not settings.demo_mode:
+        raise HTTPException(404, "Not Found")
+    return RedirectResponse(f"/history/{generate_sample_brief()}", status_code=303)
 
 
 @app.get("/history")
@@ -142,7 +163,7 @@ def history_one(run_id: int) -> HTMLResponse:
         body = brief.body_markdown if brief else "(no brief was produced for this run)"
         status, trigger = run.status, run.trigger
         started_at, finished_at = run.started_at, run.finished_at
-    return HTMLResponse(
+    return HTMLResponse(with_banner(
         f"""<!doctype html>
 <html><head><title>Brief #{run_id}</title>
 <style>body{{font-family:ui-sans-serif,system-ui;max-width:760px;margin:2rem auto;padding:0 1rem;}}
@@ -153,7 +174,7 @@ pre{{white-space:pre-wrap;background:#f6f8fa;padding:1rem;border-radius:8px;}}</
 <p><b>Started:</b> {started_at} &nbsp; <b>Finished:</b> {finished_at}</p>
 <pre>{html.escape(body)}</pre>
 </body></html>"""
-    )
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -772,4 +793,7 @@ _SETTINGS_HTML = """<!doctype html>
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_portal() -> HTMLResponse:
-    return HTMLResponse(_SETTINGS_HTML)
+    page = _SETTINGS_HTML
+    if settings.demo_mode:  # no session in the demo, so no sign-out link
+        page = page.replace('\n  <a class="projects-link" style="margin-left:0" href="/logout">Sign out</a>', "")
+    return HTMLResponse(with_banner(page))

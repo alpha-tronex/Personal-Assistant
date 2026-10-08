@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import math
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..config import BACKEND_ROOT
+from ..demo import is_demo, with_banner
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,6 +69,26 @@ def _fetch_latest_commit(repo: str) -> dict | None:
         "days": days,
         "repo": repo,
     }
+
+
+# Both containers (prod + public demo) share one IP and GitHub's 60/hour
+# anonymous limit, so commit lookups — failures included — are cached.
+COMMIT_CACHE_TTL = 600.0
+_commit_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+def _latest_commit(repo: str, *, force: bool = False, clock=time.monotonic) -> dict | None:
+    """Cached `_fetch_latest_commit`; returns None when GitHub fails (also cached)."""
+    hit = _commit_cache.get(repo)
+    if hit and not force and clock() - hit[0] < COMMIT_CACHE_TTL:
+        return hit[1]
+    try:
+        info = _fetch_latest_commit(repo)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("GitHub fetch failed for %s: %s", repo, e)
+        info = None
+    _commit_cache[repo] = (clock(), info)
+    return info
 
 
 # ── YAML helpers ──────────────────────────────────────────────────────────────
@@ -130,11 +152,7 @@ def _commit_rows_html(repos: list[str]) -> tuple[str, int]:
     min_days = 9999
     rows = []
     for repo in repos:
-        info = None
-        try:
-            info = _fetch_latest_commit(repo)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("GitHub fetch failed for %s: %s", repo, e)
+        info = _latest_commit(repo)
         repo_label = html.escape(repo.split("/")[-1])
         if info:
             min_days = min(min_days, info["days"])
@@ -262,21 +280,18 @@ def project_commits(name: str) -> JSONResponse:
             results = []
             min_days = 9999
             for repo in repos:
-                try:
-                    info = _fetch_latest_commit(repo)
-                    if info:
-                        min_days = min(min_days, info["days"])
-                        results.append({
-                            "repo": repo,
-                            "sha": info["sha"],
-                            "message": info["message"],
-                            "days": info["days"],
-                            "when": _fmt_relative(info["days"]),
-                        })
-                    else:
-                        results.append({"repo": repo, "error": True})
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("GitHub fetch failed for %s: %s", repo, e)
+                # The ↻ button forces a fresh fetch — except on the public demo.
+                info = _latest_commit(repo, force=not is_demo())
+                if info:
+                    min_days = min(min_days, info["days"])
+                    results.append({
+                        "repo": repo,
+                        "sha": info["sha"],
+                        "message": info["message"],
+                        "days": info["days"],
+                        "when": _fmt_relative(info["days"]),
+                    })
+                else:
                     results.append({"repo": repo, "error": True})
             fresh_cls, fresh_label = _freshness(min_days) if min_days < 9999 else ("fresh-dormant", "No data")
             return JSONResponse({
@@ -585,4 +600,4 @@ def projects_dashboard() -> HTMLResponse:
         rendered.sort(key=lambda x: x[1])
         cards   = "".join(c for c, _ in rendered)
         summary = _build_summary(projects)
-    return HTMLResponse(_PAGE_TEMPLATE.format(cards=cards, summary=summary))
+    return HTMLResponse(with_banner(_PAGE_TEMPLATE.format(cards=cards, summary=summary)))

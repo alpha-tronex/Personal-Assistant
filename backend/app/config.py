@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # pushed commit, so a deploy that silently kept the old container fails.
     git_sha: str = Field(default="dev", alias="GIT_SHA")
 
+    # Public demo instance (demo.alphatronex.com): sample data, no login, no
+    # integrations. See app/demo.py.
+    demo_mode: bool = Field(default=False, alias="DEMO_MODE")
+
     def resolve_path(self, value: str) -> Path:
         """Resolve a possibly-relative path against the backend root."""
         p = Path(value)

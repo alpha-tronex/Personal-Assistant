@@ -12,10 +12,12 @@ from zoneinfo import ZoneInfo
 from ..config import get_settings
 
 
-def compose_brief(*, calendar_md: str, reminders_md: str, gmail_md: str, youtube_md: str) -> str:
+def compose_brief(
+    *, calendar_md: str, reminders_md: str, gmail_md: str, youtube_md: str, now: datetime | None = None
+) -> str:
     settings = get_settings()
     tz = ZoneInfo(settings.app_timezone)
-    today = datetime.now(tz).strftime("%a, %b %-d")
+    today = (now or datetime.now(tz)).astimezone(tz).strftime("%a, %b %-d")
     header = f"🌅 *Morning Brief — {today}*"
     sections = [header, calendar_md]
     if reminders_md:

@@ -29,3 +29,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Public demo (demo.alphatronex.com): same image, DEMO_MODE=true, sample data,
+  # no login. Deliberately gets NO .env and NO data volume — it has no
+  # Telegram/OpenAI/Google credentials to leak, and its SQLite file lives in
+  # the container, reset on startup, nightly at 03:00 and on every deploy.
+  personal-assistant-demo:
+    image: personal-assistant:latest
+    container_name: personal-assistant-demo
+    depends_on:
+      - personal-assistant   # built by that service
+    restart: unless-stopped
+    environment:
+      DEMO_MODE: "true"
+      GIT_SHA: ${GIT_SHA:-dev}
+    ports:
+      - "127.0.0.1:8001:8000"
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

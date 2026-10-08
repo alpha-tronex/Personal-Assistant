@@ -6,6 +6,13 @@ import yaml
 from app.routers import projects
 
 
+@pytest.fixture(autouse=True)
+def _empty_commit_cache():
+    projects._commit_cache.clear()
+    yield
+    projects._commit_cache.clear()
+
+
 @pytest.fixture
 def projects_file(tmp_path, monkeypatch):
     path = tmp_path / "projects.yaml"
@@ -65,3 +72,26 @@ def test_commits_endpoint(client, projects_file, github):
     r = client.get("/projects/Quiz Master/commits")
     assert r.status_code == 200
     assert "abc1234" in r.text
+
+
+def test_commit_lookups_are_cached_including_failures(monkeypatch):
+    calls = []
+
+    def fake(repo):
+        calls.append(repo)
+        raise RuntimeError("404")
+
+    monkeypatch.setattr(projects, "_fetch_latest_commit", fake)
+    now = [0.0]
+
+    def clock():
+        return now[0]
+
+    assert projects._latest_commit("me/private", clock=clock) is None
+    assert projects._latest_commit("me/private", clock=clock) is None
+    assert calls == ["me/private"]  # second call served from cache
+    now[0] = projects.COMMIT_CACHE_TTL + 1
+    projects._latest_commit("me/private", clock=clock)
+    assert len(calls) == 2  # expired → refetched
+    projects._latest_commit("me/private", force=True, clock=clock)
+    assert len(calls) == 3  # ↻ refresh bypasses the cache

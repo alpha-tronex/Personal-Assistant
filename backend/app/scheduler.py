@@ -29,6 +29,20 @@ def start_scheduler() -> None:
     settings = get_settings()
     tz = ZoneInfo(settings.app_timezone)
     _scheduler = BackgroundScheduler(timezone=tz)
+    if settings.demo_mode:
+        # The public demo never runs the real brief; it just goes back to the
+        # sample data every night so visitors' edits don't pile up.
+        from .demo import reset_demo_data
+
+        _scheduler.add_job(
+            reset_demo_data,
+            CronTrigger(hour=3, minute=0, timezone=tz),
+            id="demo_reset",
+            replace_existing=True,
+        )
+        _scheduler.start()
+        logger.info("Scheduler started (demo): sample data resets daily @ 03:00 %s", settings.app_timezone)
+        return
     _scheduler.add_job(
         run_morning_brief,
         CronTrigger(hour=settings.app_brief_hour, minute=settings.app_brief_minute, timezone=tz),

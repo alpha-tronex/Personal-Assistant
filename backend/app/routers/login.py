@@ -33,8 +33,23 @@ def _is_authenticated(request: Request) -> bool:
     )
 
 
+def demo_blocked(method: str, path: str) -> bool:
+    """Routes switched off on the public demo: anything touching real
+    credentials or the bridge, and writes to the shared projects file."""
+    if path in ("/reauth", "/reauth/callback") or path.startswith("/whatsapp/"):
+        return True
+    return method != "GET" and path.startswith("/projects/")
+
+
 async def require_login(request: Request, call_next):
-    """HTTP middleware: private routes need a valid session cookie."""
+    """HTTP middleware: private routes need a valid session cookie.
+
+    In demo mode there is no login; a few routes are disabled instead.
+    """
+    if get_settings().demo_mode:
+        if demo_blocked(request.method, request.url.path):
+            return JSONResponse({"detail": "Not available in the demo"}, status_code=404)
+        return await call_next(request)
     if auth.is_public(request.url.path) or _is_authenticated(request):
         return await call_next(request)
     if request.method == "GET" and "text/html" in request.headers.get("accept", ""):

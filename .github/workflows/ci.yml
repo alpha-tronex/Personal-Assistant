@@ -111,3 +111,19 @@ jobs:
           done
           echo "::error::Smoke test failed — /healthz did not report version ${expected} within 60s (last response: ${body:-none})"
           exit 1
+
+      - name: Smoke test the public demo
+        run: |
+          expected="${GITHUB_SHA::7}"
+          for _ in $(seq 1 12); do
+            body=$(curl -fsS https://demo.alphatronex.com/healthz || true)
+            if echo "$body" | grep -q "\"version\":\"${expected}\""; then
+              # The demo must serve pages without a login and with the banner.
+              curl -fsS -H "Accept: text/html" https://demo.alphatronex.com/settings | grep -q "Demo</strong> with sample data"
+              echo "Demo smoke test passed: https://demo.alphatronex.com is serving ${expected}" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Demo smoke test failed — https://demo.alphatronex.com/healthz did not report ${expected} within 60s (last response: ${body:-none})"
+          exit 1

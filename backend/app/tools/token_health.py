@@ -31,10 +31,9 @@ _WARN_MSG = """\
 Your Google token is {age} day{s} old and may be revoked soon \
 (typically around day 12).
 
-Re-authenticate now to avoid a broken brief:
-
-  cd "/Users/alphathiam/Documents/Development/GitHub/Personal Assistant/backend"
-  .venv/bin/python scripts/google_login.py
+Re-authenticate now to avoid a broken brief: open
+https://assistant.alphatronex.com/reauth?secret=<REAUTH_SECRET>
+(or, running locally, `python scripts/google_login.py` in backend/).
 
 You will receive this reminder each morning until the token is refreshed.\
 """
