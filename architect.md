@@ -126,6 +126,14 @@ for approval. Status flows: `pending → sent | dismissed`.
   auto-discovered via `scripts/test_telegram.py`'s call to `getUpdates`.
   The poller also uses the bot token for long-polling (`getUpdates`) and
   answering inline keyboard callbacks (`answerCallbackQuery`).
+- **Web UI / API login**: everything except `/healthz`, `/reauth*`,
+  `/login`, `/logout`, the favicon and `/whatsapp/*` requires a session
+  cookie from `/login` (single password, `app/auth.py`). The password is
+  stored only as a PBKDF2 hash (`ADMIN_PASSWORD_HASH`); cookies are signed
+  with `SESSION_SECRET` and the hash, so a password change logs everyone out.
+  Missing settings mean the private routes stay locked. `/whatsapp/*` is
+  exempt for the host-level bridge and blocked publicly at nginx. Set both
+  values with `backend/scripts/set_admin_password.py`.
 - **WhatsApp bridge**: A local Node.js process (port 3000) that bridges
   WhatsApp Web to this FastAPI server, authenticated by a QR-code scan. On
   the Hetzner box it reaches WhatsApp through an IPRoyal residential proxy

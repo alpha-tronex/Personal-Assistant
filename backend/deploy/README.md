@@ -27,7 +27,9 @@ On the server, `/opt/assistant/deploy.sh` (the source is `deploy/deploy.sh` here
 4. Waits for `/healthz` to report the new SHA.
 
 State lives outside the checkout, in `/opt/assistant/`, and the compose file
-mounts it: `.env` (secrets), `config/` (projects.yaml / channels.yaml) and
+mounts it: `.env` (secrets, including the login's `ADMIN_PASSWORD_HASH` /
+`SESSION_SECRET`; run `scripts/set_admin_password.py` to change the password,
+replace both lines, then `docker restart personal-assistant`), `config/` (projects.yaml / channels.yaml) and
 `data/` (SQLite + Google token). A deploy never touches it.
 
 **Not deployed by this pipeline:** the WhatsApp bridge

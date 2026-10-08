@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Re-auth secret — protects /reauth from public access
     reauth_secret: str = Field(default="", alias="REAUTH_SECRET")
 
+    # Web UI / API login (see app/auth.py). Generate both with
+    # `python scripts/set_admin_password.py`. Empty = everything private
+    # stays locked.
+    admin_password_hash: str = Field(default="", alias="ADMIN_PASSWORD_HASH")
+    session_secret: str = Field(default="", alias="SESSION_SECRET")
+
     # Gmail filtering
     # Gmail search query for the email agent. By default we exclude the
     # Promotions tab so advertising / marketing mail never reaches the LLM.

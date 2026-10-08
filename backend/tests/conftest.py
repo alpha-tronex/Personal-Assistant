@@ -13,6 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from app.auth import hash_password  # stdlib-only; safe to import before settings
+
+TEST_PASSWORD = "correct horse battery staple"
+
 _TMP = Path(tempfile.mkdtemp(prefix="pa-tests-"))
 
 os.environ.update(
@@ -26,6 +30,9 @@ os.environ.update(
         "WHATSAPP_BRIDGE_URL": "http://bridge.test:3000",
         "GOOGLE_TOKEN_PATH": str(_TMP / "token.json"),
         "GMAIL_IGNORE_FROM": "",
+        # Low iteration count keeps tests fast; verify_password reads it from the hash.
+        "ADMIN_PASSWORD_HASH": hash_password(TEST_PASSWORD, iterations=1_000),
+        "SESSION_SECRET": "test-session-secret",
     }
 )
 
@@ -65,18 +72,31 @@ def fresh_db():
 
 
 @pytest.fixture
-def client():
-    """FastAPI test client WITHOUT the lifespan.
+def anon_client():
+    """FastAPI test client WITHOUT the lifespan and without a session.
 
     Entering the lifespan (`with TestClient(app)`) would start the APScheduler
     job and the Telegram long-poll thread, so it is never used in tests — the
-    audit script enforces that.
+    audit script enforces that. HTTPS base URL because the session cookie is
+    `Secure`.
     """
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.routers.login import throttle
 
-    return TestClient(app)
+    throttle._failures.clear()
+    return TestClient(app, base_url="https://testserver")
+
+
+@pytest.fixture
+def client(anon_client):
+    """Logged-in test client (session cookie already set)."""
+    from app import auth
+
+    s = config.get_settings()
+    anon_client.cookies.set(auth.COOKIE_NAME, auth.make_session_token(s.session_secret, s.admin_password_hash))
+    return anon_client
 
 
 @pytest.fixture
