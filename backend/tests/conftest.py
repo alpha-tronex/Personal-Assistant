@@ -102,3 +102,13 @@ def client(anon_client):
 @pytest.fixture
 def settings():
     return config.get_settings()
+
+
+@pytest.fixture
+def test_password():
+    """The plain-text password matching ADMIN_PASSWORD_HASH above.
+
+    A fixture rather than an import: plain `pytest` (as CI runs it) doesn't put
+    backend/ on sys.path, so `from tests.conftest import ...` fails there.
+    """
+    return TEST_PASSWORD

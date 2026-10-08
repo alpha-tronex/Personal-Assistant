@@ -8,12 +8,18 @@ import pytest
 
 from app import auth
 from app.main import app
-from tests.conftest import TEST_PASSWORD
 
 HTML = {"accept": "text/html"}
 
 
-def _login(c, password=TEST_PASSWORD, next_url="/projects", ip="9.9.9.9"):
+@pytest.fixture
+def login(anon_client, test_password):
+    def _do(password=test_password, next_url="/projects", ip="9.9.9.9"):
+        return _login(anon_client, password, next_url, ip)
+    return _do
+
+
+def _login(c, password, next_url="/projects", ip="9.9.9.9"):
     return c.post(
         "/login",
         content=f"password={password}&next={next_url}".replace(" ", "+"),
@@ -65,8 +71,8 @@ def test_api_calls_get_401_not_a_redirect(anon_client):
     assert anon_client.post("/run-now").status_code == 401
 
 
-def test_correct_password_sets_a_secure_cookie_and_redirects_back(anon_client):
-    r = _login(anon_client)
+def test_correct_password_sets_a_secure_cookie_and_redirects_back(anon_client, login):
+    r = login()
     assert r.status_code == 303 and r.headers["location"] == "/projects"
     cookie = r.headers["set-cookie"]
     for flag in ("pa_session=", "HttpOnly", "Secure", "SameSite=lax", "Max-Age=2592000"):
@@ -74,26 +80,26 @@ def test_correct_password_sets_a_secure_cookie_and_redirects_back(anon_client):
     assert anon_client.get("/reminders").status_code == 200  # cookie now works
 
 
-def test_wrong_password_is_rejected(anon_client):
-    r = _login(anon_client, password="nope")
+def test_wrong_password_is_rejected(anon_client, login):
+    r = login(password="nope")
     assert r.status_code == 401 and "Wrong password" in r.text
     assert "set-cookie" not in r.headers
 
 
-def test_login_redirect_target_cannot_leave_the_site(anon_client):
-    assert _login(anon_client, next_url="https://evil.com").headers["location"] == "/settings"
+def test_login_redirect_target_cannot_leave_the_site(anon_client, login):
+    assert login(next_url="https://evil.com").headers["location"] == "/settings"
 
 
-def test_repeated_failures_lock_out_that_ip_even_for_the_right_password(anon_client):
+def test_repeated_failures_lock_out_that_ip_even_for_the_right_password(anon_client, login):
     for _ in range(5):
-        _login(anon_client, password="nope", ip="6.6.6.6")
-    assert _login(anon_client, ip="6.6.6.6").status_code == 429
-    assert _login(anon_client, ip="7.7.7.7").status_code == 303  # other IPs unaffected
+        login(password="nope", ip="6.6.6.6")
+    assert login(ip="6.6.6.6").status_code == 429
+    assert login(ip="7.7.7.7").status_code == 303  # other IPs unaffected
 
 
-def test_unconfigured_server_fails_closed(anon_client, settings, monkeypatch):
+def test_unconfigured_server_fails_closed(anon_client, settings, monkeypatch, login):
     monkeypatch.setattr(settings, "admin_password_hash", "")
-    assert _login(anon_client).status_code == 503
+    assert login().status_code == 503
     assert anon_client.get("/reminders").status_code == 401
 
 
