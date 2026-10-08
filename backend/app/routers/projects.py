@@ -36,6 +36,10 @@ _CIRC = 2 * math.pi * 28
 
 # ── GitHub helpers ────────────────────────────────────────────────────────────
 
+# GitHub answers 404 (not 403) for private repos to anonymous callers.
+PRIVATE_REPO = {"private": True}
+
+
 @retry(
     reraise=True,
     stop=stop_after_attempt(2),
@@ -43,7 +47,8 @@ _CIRC = 2 * math.pi * 28
     retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
 )
 def _fetch_latest_commit(repo: str) -> dict | None:
-    """Return {'message', 'date', 'sha', 'days'} for repo's default-branch HEAD."""
+    """Return {'message', 'date', 'sha', 'days'} for repo's default-branch HEAD,
+    or PRIVATE_REPO when GitHub won't show it to us anonymously."""
     url = f"https://api.github.com/repos/{repo}/commits"
     headers = {
         "Accept": "application/vnd.github+json",
@@ -51,6 +56,8 @@ def _fetch_latest_commit(repo: str) -> dict | None:
     }
     with httpx.Client(timeout=8.0) as client:
         r = client.get(url, headers=headers, params={"per_page": 1})
+    if r.status_code == 404:
+        return PRIVATE_REPO  # returned, not raised, so tenacity doesn't retry it
     r.raise_for_status()
     data = r.json()
     if not data:
@@ -154,7 +161,7 @@ def _commit_rows_html(repos: list[str]) -> tuple[str, int]:
     for repo in repos:
         info = _latest_commit(repo)
         repo_label = html.escape(repo.split("/")[-1])
-        if info:
+        if info and not info.get("private"):
             min_days = min(min_days, info["days"])
             rows.append(
                 f'<div class="commit-row">'
@@ -168,7 +175,7 @@ def _commit_rows_html(repos: list[str]) -> tuple[str, int]:
             rows.append(
                 f'<div class="commit-row">'
                 f'<span class="repo-name">{repo_label}</span>'
-                f'<span class="commit-when muted">unavailable</span>'
+                f'<span class="commit-when muted">{"private repo" if info else "unavailable"}</span>'
                 f'</div>'
             )
     return "".join(rows), min_days
@@ -282,7 +289,7 @@ def project_commits(name: str) -> JSONResponse:
             for repo in repos:
                 # The ↻ button forces a fresh fetch — except on the public demo.
                 info = _latest_commit(repo, force=not is_demo())
-                if info:
+                if info and not info.get("private"):
                     min_days = min(min_days, info["days"])
                     results.append({
                         "repo": repo,
@@ -292,7 +299,7 @@ def project_commits(name: str) -> JSONResponse:
                         "when": _fmt_relative(info["days"]),
                     })
                 else:
-                    results.append({"repo": repo, "error": True})
+                    results.append({"repo": repo, "error": True, "private": bool(info)})
             fresh_cls, fresh_label = _freshness(min_days) if min_days < 9999 else ("fresh-dormant", "No data")
             return JSONResponse({
                 "ok": True,
@@ -553,7 +560,7 @@ _PAGE_TEMPLATE = """<!doctype html>
         if (c.error) {{
           return `<div class="commit-row">
             <span class="repo-name">${{repoName}}</span>
-            <span class="commit-when muted">unavailable</span>
+            <span class="commit-when muted">${{c.private ? 'private repo' : 'unavailable'}}</span>
           </div>`;
         }}
         return `<div class="commit-row">

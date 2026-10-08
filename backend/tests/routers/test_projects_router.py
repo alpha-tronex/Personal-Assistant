@@ -54,7 +54,7 @@ def test_dashboard_survives_github_being_down(client, projects_file, monkeypatch
 
     monkeypatch.setattr(projects, "_fetch_latest_commit", down)
     page = client.get("/projects")
-    assert page.status_code == 200 and "unavailable" in page.text
+    assert page.status_code == 200 and "unavailable" in page.text and "private repo" not in page.text.split("<script")[0]
 
 
 def test_update_project_saves_trimmed_items_case_insensitively(client, projects_file):
@@ -95,3 +95,28 @@ def test_commit_lookups_are_cached_including_failures(monkeypatch):
     assert len(calls) == 2  # expired → refetched
     projects._latest_commit("me/private", force=True, clock=clock)
     assert len(calls) == 3  # ↻ refresh bypasses the cache
+
+
+def test_private_repos_are_labelled_private_not_unavailable(client, projects_file, monkeypatch):
+    monkeypatch.setattr(projects, "_fetch_latest_commit", lambda repo: projects.PRIVATE_REPO)
+    page = client.get("/projects").text
+    assert "private repo" in page and "unavailable" not in page.split("<script")[0]
+    commits = client.get("/projects/Quiz Master/commits").json()["commits"]
+    assert commits == [{"repo": "me/quiz", "error": True, "private": True}]
+
+
+def test_github_404_means_private_and_is_not_retried(monkeypatch):
+    import httpx
+
+    calls = []
+
+    def handler(request):
+        calls.append(request.url)
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        projects.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)
+    )
+    assert projects._fetch_latest_commit("me/secret") == projects.PRIVATE_REPO
+    assert len(calls) == 1
