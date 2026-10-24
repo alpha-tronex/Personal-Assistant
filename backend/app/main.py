@@ -25,6 +25,7 @@ import yaml
 from .config import BACKEND_ROOT, get_settings
 from .db import init_db, session_scope
 from .demo import generate_sample_brief, reset_demo_data, with_banner
+from .log_redaction import configure_logging
 from .models import AppSetting, Brief, Reminder, Run, YoutubeChannel
 from .routers.login import require_login
 from .routers.login import router as login_router
@@ -76,10 +77,7 @@ def start_background_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.basicConfig(
-        level=settings.app_log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configure_logging(settings.app_log_level)
     start_background_jobs()
     logger.info("Agentic app started%s.", " in DEMO mode" if settings.demo_mode else "")
     try:
